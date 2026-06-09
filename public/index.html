@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>P2P File Transfer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header>
+    <div class="logo">
+      <span class="logo-icon">⚡</span>
+      <span class="logo-text">P2P Transfer</span>
+      <span class="logo-sub">by TechniKnest</span>
+    </div>
+    <div class="status-badge" id="statusBadge">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Initializing...</span>
+    </div>
+  </header>
+
+  <!-- ===== MAIN CONTAINER ===== -->
+  <main>
+
+    <!-- ======= SENDER VIEW ======= -->
+    <div id="senderView" class="view hidden">
+
+      <!-- Step 1: File Selection -->
+      <div class="card" id="fileSelectCard">
+        <div class="card-icon">📁</div>
+        <h2>Send a File</h2>
+        <p class="subtitle">Select any file — no size limit. Transfer goes directly to receiver.</p>
+
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-icon">⬆️</div>
+          <p>Drag & drop your file here</p>
+          <span>or</span>
+          <label class="btn btn-primary" for="fileInput">Browse Files</label>
+          <input type="file" id="fileInput" multiple hidden />
+        </div>
+
+        <!-- File Queue (multiple files bonus) -->
+        <div id="fileQueue" class="file-queue hidden">
+          <h3>Files to send</h3>
+          <ul id="fileList"></ul>
+          <button class="btn btn-secondary" id="addMoreBtn">+ Add More</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Share Link -->
+      <div class="card hidden" id="shareLinkCard">
+        <div class="card-icon">🔗</div>
+        <h2>Share This Link</h2>
+        <p class="subtitle">Send this link to the receiver. They must open it to start the transfer.</p>
+
+        <div class="link-box">
+          <input type="text" id="shareLinkInput" readonly />
+          <button class="btn btn-primary" id="copyLinkBtn">Copy</button>
+        </div>
+
+        <div class="waiting-indicator hidden" id="waitingIndicator">
+          <div class="spinner"></div>
+          <span>Waiting for receiver to join...</span>
+        </div>
+
+        <div class="connected-indicator hidden" id="connectedIndicator">
+          <span class="check">✅</span>
+          <span>Receiver connected! Starting transfer...</span>
+        </div>
+      </div>
+
+      <!-- Step 3: Transfer Progress -->
+      <div class="card hidden" id="senderProgressCard">
+        <div class="card-icon">📤</div>
+        <h2>Sending File</h2>
+
+        <div class="file-info" id="senderFileInfo"></div>
+
+        <div class="progress-wrapper">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="senderProgressFill"></div>
+          </div>
+          <div class="progress-stats">
+            <span id="senderPercent">0%</span>
+            <span id="senderMB">0 MB / 0 MB</span>
+          </div>
+        </div>
+
+        <div class="transfer-stats">
+          <div class="stat">
+            <span class="stat-label">Speed</span>
+            <span class="stat-value" id="senderSpeed">-- MB/s</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">ETA</span>
+            <span class="stat-value" id="senderETA">--</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Chunks</span>
+            <span class="stat-value" id="senderChunks">0 / 0</span>
+          </div>
+        </div>
+
+        <div class="hidden" id="senderDoneMsg">
+          <div class="success-banner">
+            ✅ Transfer complete! All files sent successfully.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ======= RECEIVER VIEW ======= -->
+    <div id="receiverView" class="view hidden">
+
+      <!-- Waiting -->
+      <div class="card" id="receiverWaitCard">
+        <div class="card-icon">📡</div>
+        <h2>Receiver Mode</h2>
+        <p class="subtitle">You have opened a transfer link. Connecting to sender...</p>
+        <div class="waiting-indicator">
+          <div class="spinner"></div>
+          <span id="receiverWaitText">Connecting to sender...</span>
+        </div>
+      </div>
+
+      <!-- Receiving Progress -->
+      <div class="card hidden" id="receiverProgressCard">
+        <div class="card-icon">📥</div>
+        <h2>Receiving File</h2>
+
+        <div class="file-info" id="receiverFileInfo"></div>
+
+        <div class="progress-wrapper">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="receiverProgressFill"></div>
+          </div>
+          <div class="progress-stats">
+            <span id="receiverPercent">0%</span>
+            <span id="receiverMB">0 MB / 0 MB</span>
+          </div>
+        </div>
+
+        <div class="transfer-stats">
+          <div class="stat">
+            <span class="stat-label">Speed</span>
+            <span class="stat-value" id="receiverSpeed">-- MB/s</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">ETA</span>
+            <span class="stat-value" id="receiverETA">--</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Chunks</span>
+            <span class="stat-value" id="receiverChunks">0 / 0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Done -->
+      <div class="card hidden" id="receiverDoneCard">
+        <div class="card-icon">🎉</div>
+        <h2>Transfer Complete!</h2>
+        <p class="subtitle">Your file has been received successfully.</p>
+        <div id="downloadList" class="download-list"></div>
+        <button class="btn btn-primary" onclick="location.reload()">Receive Another File</button>
+      </div>
+
+    </div>
+
+    <!-- ======= ERROR VIEW ======= -->
+    <div id="errorView" class="view hidden">
+      <div class="card error-card">
+        <div class="card-icon">⚠️</div>
+        <h2 id="errorTitle">Connection Error</h2>
+        <p id="errorMessage">Something went wrong.</p>
+        <button class="btn btn-primary" onclick="location.reload()">Try Again</button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===== RECONNECT TOAST ===== -->
+  <div class="toast hidden" id="reconnectToast">
+    <span>⚠️ Connection lost. Attempting to resume...</span>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
