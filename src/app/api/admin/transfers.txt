@@ -1,0 +1,28 @@
+import { NextResponse } from 'next/server';
+import connectDB from '@/lib/mongodb';
+
+export async function GET() {
+  try {
+    await connectDB();
+    if (global.useMockDb) return NextResponse.json({ transfers: [] });
+    const TransferRecord = (await import('@/models/TransferRecord')).default;
+    const transfers = await TransferRecord.find({}).sort({ createdAt: -1 }).limit(100);
+    return NextResponse.json({ transfers });
+  } catch (error) {
+    return NextResponse.json({ transfers: [] });
+  }
+}
+
+export async function POST(request) {
+  try {
+    await connectDB();
+    const data = await request.json();
+    if (!global.useMockDb) {
+      const TransferRecord = (await import('@/models/TransferRecord')).default;
+      await TransferRecord.create(data);
+    }
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ success: false });
+  }
+}
