@@ -50,6 +50,14 @@ export function useWebRTC(onIceCandidate, onDataChannel) {
     return { offer, dc };
   }, [initPC]);
 
+  const handleOffer = useCallback(async (offer) => {
+    const pc = pcRef.current || initPC();
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    return answer;
+  }, [initPC]);
+
   const handleAnswer = useCallback(async (answer) => {
     if (pcRef.current) {
       await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
@@ -143,5 +151,5 @@ export function useWebRTC(onIceCandidate, onDataChannel) {
     dcRef.current = null;
   }, []);
 
-  return { initPC, createOffer, handleAnswer, handleIceCandidate, sendFiles, close };
+  return { initPC, createOffer, handleOffer, handleAnswer, handleIceCandidate, sendFiles, close };
 }

@@ -109,7 +109,7 @@ app.prepare().then(() => {
   global.activeConnections = activeConnections;
 
   const PORT = process.env.PORT || 3000;
-  httpServer.listen(PORT, () => {
-    console.log(`\n✅ Server running at http://localhost:${PORT}\n`);
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n✅ Server ready on port ${PORT} (all interfaces)\n`);
   });
 });

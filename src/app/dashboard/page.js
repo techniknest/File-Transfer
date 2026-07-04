@@ -61,7 +61,9 @@ export default function Dashboard() {
 
   const getSocket = useCallback(() => {
     if (!socketRef.current) {
-      socketRef.current = io();
+      socketRef.current = io(window.location.origin, {
+        transports: ['websocket', 'polling'],
+      });
     }
     return socketRef.current;
   }, []);
@@ -95,7 +97,12 @@ export default function Dashboard() {
       setModalOpen(true);
 
       const socket = getSocket();
-      socket.emit('create-room', id);
+
+      socket.off('receiver-joined');
+      socket.off('answer');
+      socket.off('ice-candidate');
+
+      const pendingCandidates = [];
 
       socket.on('receiver-joined', async () => {
         setTransferStatus('connecting');
@@ -188,22 +195,36 @@ export default function Dashboard() {
           } catch (_) {}
         };
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('offer', { roomId: id, offer });
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('offer', { roomId: id, offer });
+        } catch (err) {
+          console.error('Error creating offer', err);
+        }
       });
 
       socket.on('answer', async ({ answer }) => {
         if (pcRef.current) {
           await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+          for (const candidate of pendingCandidates) {
+            try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
+          }
+          pendingCandidates.length = 0;
         }
       });
 
       socket.on('ice-candidate', async ({ candidate }) => {
         if (pcRef.current && candidate) {
-          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
+          if (pcRef.current.remoteDescription) {
+            try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
+          } else {
+            pendingCandidates.push(candidate);
+          }
         }
       });
+
+      socket.emit('create-room', id);
     } else {
       setFiles(newFiles);
     }
