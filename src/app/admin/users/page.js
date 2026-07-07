@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import EmptyState from '../../components/EmptyState';
 import { showToast } from '../../components/Toast';
+import { Users, X } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -158,7 +159,7 @@ export default function AdminUsersPage() {
         <LoadingSkeleton type="table" count={5} />
       ) : users.length === 0 ? (
         <EmptyState
-          icon="👥"
+          icon={<Users size={48} className="text-gray-400" />}
           title="No users found"
           description="Try adjusting your search criteria or filters."
           actionText="Reset Filters"
@@ -247,7 +248,7 @@ export default function AdminUsersPage() {
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-primary)' }}>User Profile Details</h2>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{selectedUser.name}</p>
               </div>
-              <button onClick={() => setSelectedUser(null)} className="btn btn-ghost btn-icon">✕</button>
+              <button onClick={() => setSelectedUser(null)} className="btn btn-ghost btn-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
             </div>
 
             {/* Profile Grid */}

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Zap } from 'lucide-react';
 
 const FOOTER_LINKS = [
   { href: '/about', label: 'About' },
@@ -17,7 +18,7 @@ export default function Footer() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
               <div className="gradient-brand" style={{ width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ color: 'white', fontSize: '1rem' }}>⚡</span>
+                <Zap className="text-white" size={18} />
               </div>
               <span style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '1.1rem' }}>P2P Transfer</span>
             </div>

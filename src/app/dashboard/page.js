@@ -6,6 +6,7 @@ import Link from 'next/link';
 import io from 'socket.io-client';
 import TransferModal from '../components/TransferModal';
 import { showToast } from '../components/Toast';
+import { Zap, Upload, Download, Folder } from 'lucide-react';
 
 const ICE_SERVERS = {
   iceServers: [
@@ -275,7 +276,7 @@ export default function Dashboard() {
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="font-bold text-sm">⚡</span>
+              <Zap className="text-white" size={16} />
             </div>
             <span className="font-bold text-xl">P2P Transfer</span>
           </Link>
@@ -313,8 +314,8 @@ export default function Dashboard() {
                 onClick={() => setView('send')}
                 className="bg-gray-900 border border-gray-800 hover:border-blue-500 rounded-2xl p-8 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/10 group"
               >
-                <div className="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center mb-4 text-2xl shadow-lg shadow-blue-600/30">
-                  📤
+                <div className="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center mb-4 shadow-lg shadow-blue-600/30">
+                  <Upload className="text-white" size={32} />
                 </div>
                 <h2 className="text-xl font-bold mb-2">Send Files</h2>
                 <p className="text-gray-400 text-sm leading-relaxed">Select files and generate a secure transfer link. Share with anyone.</p>
@@ -329,8 +330,8 @@ export default function Dashboard() {
                 onClick={() => setView('receive')}
                 className="bg-gray-900 border border-gray-800 hover:border-green-500 rounded-2xl p-8 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-green-500/10 group"
               >
-                <div className="w-14 h-14 bg-green-600 rounded-xl flex items-center justify-center mb-4 text-2xl shadow-lg shadow-green-600/30">
-                  📥
+                <div className="w-14 h-14 bg-green-600 rounded-xl flex items-center justify-center mb-4 shadow-lg shadow-green-600/30">
+                  <Download className="text-white" size={32} />
                 </div>
                 <h2 className="text-xl font-bold mb-2">Receive Files</h2>
                 <p className="text-gray-400 text-sm leading-relaxed">Paste a transfer link to receive files with live progress tracking.</p>
@@ -366,7 +367,9 @@ export default function Dashboard() {
                 }}
                 className="border-2 border-dashed border-gray-700 rounded-xl p-16 text-center hover:border-blue-500 transition-all cursor-pointer hover:bg-blue-500/5"
               >
-                <span className="text-6xl mb-4 block">📁</span>
+                <div className="flex justify-center mb-4">
+                  <Folder size={64} className="text-indigo-400" />
+                </div>
                 <p className="text-white font-bold text-xl mb-2">Click to select or drag & drop files</p>
                 <p className="text-gray-400">Any file type • No size limit</p>
                 <input
@@ -414,7 +417,9 @@ export default function Dashboard() {
                   disabled={!receiveLink.trim()}
                   className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all text-lg hover:-translate-y-0.5"
                 >
-                  📥 Start Receiving
+                  <div className="flex items-center justify-center gap-2">
+                    <Download size={20} /> Start Receiving
+                  </div>
                 </button>
               </div>
             </div>

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import { FolderSync, Link as LinkIcon, Zap, Globe, Lock, Radio } from 'lucide-react';
 
 export default function HowItWorksPage() {
   const [mounted, setMounted] = useState(false);
@@ -30,16 +31,16 @@ export default function HowItWorksPage() {
 
           <div className={`stagger ${mounted ? 'animate-fade-up' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginBottom: '6rem' }}>
             {[
-              { step: '01', icon: '📁', title: 'Select Your Files', desc: 'Login to your account and click Send Files. Select one or multiple files from your device. Any file type, any size is supported.', color: 'blue' },
-              { step: '02', icon: '🔗', title: 'Get Transfer Link', desc: 'A unique secure link is generated instantly. Share this link with anyone you want to send files to — via WhatsApp, email, or any other way.', color: 'purple' },
-              { step: '03', icon: '⚡', title: 'Direct Transfer', desc: 'The receiver opens the link and clicks Receive. Files transfer directly from your device to theirs — no server, no cloud, just pure P2P.', color: 'green' },
+              { step: '01', icon: <FolderSync size={48} className="text-indigo-400" />, title: 'Select Your Files', desc: 'Login to your account and click Send Files. Select one or multiple files from your device. Any file type, any size is supported.', color: 'blue' },
+              { step: '02', icon: <LinkIcon size={48} className="text-indigo-400" />, title: 'Get Transfer Link', desc: 'A unique secure link is generated instantly. Share this link with anyone you want to send files to — via WhatsApp, email, or any other way.', color: 'purple' },
+              { step: '03', icon: <Zap size={48} className="text-indigo-400" />, title: 'Direct Transfer', desc: 'The receiver opens the link and clicks Receive. Files transfer directly from your device to theirs — no server, no cloud, just pure P2P.', color: 'green' },
             ].map((s, i) => (
               <div key={i} className="glass-card card-hover" style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', padding: '2.5rem' }}>
                 <div style={{ fontSize: '4rem', fontWeight: 900, color: 'rgba(99,102,241,0.2)', lineHeight: 1 }}>
                   {s.step}
                 </div>
                 <div>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '1rem', filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.3))' }}>{s.icon}</div>
+                  <div style={{ marginBottom: '1rem', color: '#818cf8', filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.3))' }}>{s.icon}</div>
                   <h3 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>{s.title}</h3>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', lineHeight: 1.6 }}>{s.desc}</p>
                 </div>
@@ -51,12 +52,12 @@ export default function HowItWorksPage() {
             <h2 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '3rem' }}>The Technology Behind It</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
               {[
-                { icon: '🌐', title: 'WebRTC', desc: 'Direct peer-to-peer connection between browsers — no central server bottleneck.' },
-                { icon: '🔒', title: 'End-to-End Encryption', desc: 'All data is encrypted via WebRTC standard DTLS/SRTP before leaving your device.' },
-                { icon: '📡', title: 'TURN/STUN Servers', desc: 'Smart relay servers help establish the connection smoothly even across complex networks or strict NATs.' },
+                { icon: <Globe size={40} className="text-indigo-400" />, title: 'WebRTC', desc: 'Direct peer-to-peer connection between browsers — no central server bottleneck.' },
+                { icon: <Lock size={40} className="text-indigo-400" />, title: 'End-to-End Encryption', desc: 'All data is encrypted via WebRTC standard DTLS/SRTP before leaving your device.' },
+                { icon: <Radio size={40} className="text-indigo-400" />, title: 'TURN/STUN Servers', desc: 'Smart relay servers help establish the connection smoothly even across complex networks or strict NATs.' },
               ].map((t, i) => (
                 <div key={i} className="card card-hover" style={{ padding: '2rem' }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '1rem', filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.3))' }}>{t.icon}</div>
+                  <div style={{ marginBottom: '1rem', color: '#818cf8', filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.3))' }}>{t.icon}</div>
                   <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>{t.title}</h3>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.5 }}>{t.desc}</p>
                 </div>

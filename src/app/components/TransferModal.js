@@ -1,5 +1,7 @@
 'use client';
 import { useState } from 'react';
+import { Upload, X, File, Link as LinkIcon, Check, Copy, Zap, Timer, AlertTriangle, Plus } from 'lucide-react';
+
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -51,15 +53,15 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
       }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-          <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.4rem', margin: 0 }}>
-            📤 Transfer Session
+          <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.4rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Upload size={24} /> Transfer Session
           </h2>
           {status !== 'transferring' && (
             <button onClick={onClose} style={{
               background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white',
               width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer',
-              fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>✕</button>
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}><X size={20} /></button>
           )}
         </div>
 
@@ -74,7 +76,7 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
                 display: 'flex', alignItems: 'center', gap: '0.75rem',
                 background: 'rgba(255,255,255,0.05)', borderRadius: '0.75rem', padding: '0.6rem 0.875rem'
               }}>
-                <span style={{ fontSize: '1.25rem' }}>📄</span>
+                <File size={20} className="text-gray-400" />
                 <span style={{ color: 'white', fontSize: '0.875rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                 <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem', flexShrink: 0 }}>{formatBytes(f.size)}</span>
               </div>
@@ -85,8 +87,8 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
         {/* Share Link */}
         {shareLink && (
           <div style={{ marginBottom: '1.5rem' }}>
-            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
-              🔗 SHARE THIS LINK
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <LinkIcon size={16} /> SHARE THIS LINK
             </p>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <input
@@ -100,9 +102,9 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
               <button onClick={copyLink} style={{
                 background: copied ? '#10b981' : '#6366f1', border: 'none', color: 'white',
                 borderRadius: '0.75rem', padding: '0.75rem 1rem', cursor: 'pointer', fontWeight: 700,
-                fontSize: '0.875rem', flexShrink: 0, transition: 'all 0.2s'
+                fontSize: '0.875rem', flexShrink: 0, transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '0.4rem'
               }}>
-                {copied ? '✅ Copied!' : '📋 Copy'}
+                {copied ? <><Check size={16} /> Copied!</> : <><Copy size={16} /> Copy</>}
               </button>
             </div>
           </div>
@@ -118,7 +120,7 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
 
         {status === 'connecting' && (
           <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-            <p style={{ color: '#6366f1', fontWeight: 700, fontSize: '1.1rem' }}>🔗 Establishing P2P connection...</p>
+            <p style={{ color: '#6366f1', fontWeight: 700, fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}><LinkIcon size={20} /> Establishing P2P connection...</p>
           </div>
         )}
 
@@ -134,15 +136,15 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
               <div style={{ background: 'linear-gradient(90deg, #6366f1, #8b5cf6)', height: '100%', borderRadius: '999px', width: `${progress}%`, transition: 'width 0.3s' }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-              <span>⚡ {formatSpeed(speed)}</span>
-              <span>⏱ ETA: {formatTime(eta)}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}><Zap size={14} /> {formatSpeed(speed)}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}><Timer size={14} /> ETA: {formatTime(eta)}</span>
             </div>
           </div>
         )}
 
         {status === 'done' && (
           <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-            <span style={{ fontSize: '3rem', display: 'block', marginBottom: '0.5rem' }}>✅</span>
+            <div className="flex justify-center mb-2"><Check size={48} className="text-emerald-500" /></div>
             <p style={{ color: '#10b981', fontWeight: 800, fontSize: '1.2rem' }}>Transfer Complete!</p>
           </div>
         )}
@@ -153,8 +155,8 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
             marginTop: '1.25rem', background: 'rgba(245,158,11,0.1)',
             border: '1px solid rgba(245,158,11,0.3)', borderRadius: '0.75rem', padding: '0.875rem 1rem'
           }}>
-            <p style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.875rem', margin: 0 }}>
-              ⚠️ Do not close this window until transfer is complete!
+            <p style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.875rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <AlertTriangle size={18} /> Do not close this window until transfer is complete!
             </p>
           </div>
         )}
@@ -167,10 +169,10 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
               marginTop: '1rem', width: '100%', background: 'rgba(255,255,255,0.08)',
               border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '0.75rem',
               padding: '0.75rem', color: 'rgba(255,255,255,0.7)', cursor: 'pointer',
-              fontWeight: 600, fontSize: '0.875rem', transition: 'all 0.2s'
+              fontWeight: 600, fontSize: '0.875rem', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem'
             }}
           >
-            + Add More Files
+            <Plus size={16} /> Add More Files
           </button>
         )}
         <input id="addMoreFilesInput" type="file" multiple style={{ display: 'none' }}

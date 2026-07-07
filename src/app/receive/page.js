@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import { FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File, Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info, Ban, Hourglass } from 'lucide-react';
 
 // ─── ICE / STUN / TURN servers ────────────────────────────────────────────────
 const ICE_SERVERS = {
@@ -44,16 +45,16 @@ function formatTime(seconds) {
 }
 
 function getFileIcon(fileName) {
-  if (!fileName) return '📄';
+  if (!fileName) return <File />;
   const ext = fileName.split('.').pop()?.toLowerCase();
   const map = {
-    pdf: '📕', doc: '📝', docx: '📝', txt: '📄', xls: '📊', xlsx: '📊',
-    ppt: '📊', pptx: '📊', zip: '🗜️', rar: '🗜️', '7z': '🗜️', tar: '🗜️',
-    mp4: '🎬', mov: '🎬', avi: '🎬', mkv: '🎬', mp3: '🎵', wav: '🎵',
-    flac: '🎵', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🖼️',
-    webp: '🖼️', js: '💻', ts: '💻', py: '💻', html: '💻', css: '💻',
+    pdf: <FileText />, doc: <FileText />, docx: <FileText />, txt: <FileText />, xls: <FileText />, xlsx: <FileText />,
+    ppt: <FileText />, pptx: <FileText />, zip: <FileArchive />, rar: <FileArchive />, '7z': <FileArchive />, tar: <FileArchive />,
+    mp4: <FileVideo />, mov: <FileVideo />, avi: <FileVideo />, mkv: <FileVideo />, mp3: <FileAudio />, wav: <FileAudio />,
+    flac: <FileAudio />, jpg: <FileImage />, jpeg: <FileImage />, png: <FileImage />, gif: <FileImage />, svg: <FileImage />,
+    webp: <FileImage />, js: <FileCode />, ts: <FileCode />, py: <FileCode />, html: <FileCode />, css: <FileCode />,
   };
-  return map[ext] || '📄';
+  return map[ext] || <File />;
 }
 
 // ─── Toast Component ───────────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ function Toast({ toasts }) {
           display: 'flex', alignItems: 'center', gap: '0.5rem',
           boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
         }}>
-          <span>{t.type === 'error' ? '❌' : t.type === 'success' ? '✅' : t.type === 'warning' ? '⚠️' : 'ℹ️'}</span>
+          <span>{t.type === 'error' ? <XCircle size={16} /> : t.type === 'success' ? <CheckCircle size={16} /> : t.type === 'warning' ? <AlertTriangle size={16} /> : <Info size={16} />}</span>
           {t.message}
         </div>
       ))}
@@ -232,7 +233,7 @@ export default function ReceivePage() {
               filesRef.current = [...filesRef.current, fileEntry];
               setReceivedFiles([...filesRef.current]);
               setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-              addToast(`✔ Received: ${meta.fileName} — click the download button if it didn't save automatically`, 'success', 4000);
+              addToast(`Received: ${meta.fileName} — click the download button if it didn't save automatically`, 'success', 4000);
 
               // Use setTimeout(0) to escape the DataChannel message handler context.
               // Browsers block programmatic clicks fired directly inside WebSocket/DataChannel
@@ -259,7 +260,7 @@ export default function ReceivePage() {
             if (msg.type === 'session-end') {
               setStatus('done');
               setStats(prev => ({ ...prev, progress: 100 }));
-              addToast('🎉 All files received! Check your Downloads folder.', 'success', 6000);
+              addToast('All files received! Check your Downloads folder.', 'success', 6000);
             }
 
           } else {
@@ -366,7 +367,7 @@ export default function ReceivePage() {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
-      connect(roomParam);
+      setManualLink(window.location.origin + '/receive?room=' + roomParam);
     }
 
     return () => {
@@ -440,9 +441,9 @@ export default function ReceivePage() {
                 width: '64px', height: '64px', borderRadius: '20px',
                 background: 'linear-gradient(135deg, #10b981, #059669)',
                 boxShadow: '0 8px 32px rgba(16,185,129,0.4)',
-                fontSize: '1.75rem', marginBottom: '1rem',
+                marginBottom: '1rem',
               }}>
-                ⚡
+                <Zap size={32} className="text-white" />
               </div>
               <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white', margin: '0 0 0.35rem', letterSpacing: '-0.02em' }}>
                 P2P File Receive
@@ -487,7 +488,7 @@ export default function ReceivePage() {
                     onMouseEnter={e => e.target.style.transform = 'translateY(-1px)'}
                     onMouseLeave={e => e.target.style.transform = 'none'}
                   >
-                    📥 Start Receiving
+                    <div className="flex items-center justify-center gap-2"><Download size={20} /> Start Receiving</div>
                   </button>
                 </form>
               </div>
@@ -524,9 +525,8 @@ export default function ReceivePage() {
                   <div style={{
                     position: 'absolute', inset: 0, display: 'flex',
                     alignItems: 'center', justifyContent: 'center',
-                    fontSize: '2rem',
                   }}>
-                    📡
+                    <Radio size={48} className="text-emerald-500" />
                   </div>
                 </div>
                 <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.25rem', marginBottom: '0.5rem' }}>
@@ -648,7 +648,7 @@ export default function ReceivePage() {
                   background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
                   borderRadius: '0.75rem', padding: '0.75rem 1rem',
                 }}>
-                  <span>⚠️</span>
+                  <span><AlertTriangle size={18} /></span>
                   <p style={{ fontSize: '0.78rem', color: '#fbbf24', margin: 0, lineHeight: 1.5 }}>
                     Do not close this window or disconnect your internet while the transfer is in progress.
                   </p>
@@ -660,7 +660,7 @@ export default function ReceivePage() {
             {status === 'done' && (
               <div style={{ textAlign: 'center' }}>
                 {/* Celebration emoji */}
-                <div style={{ fontSize: '4rem', marginBottom: '0.5rem', animation: 'celebrate 0.5s ease' }}>🎉</div>
+                <div style={{ marginBottom: '0.5rem', animation: 'celebrate 0.5s ease', display: 'flex', justifyContent: 'center' }}><CheckCircle size={64} className="text-emerald-500" /></div>
                 <h2 style={{ color: '#10b981', fontWeight: 800, fontSize: '1.4rem', marginBottom: '0.4rem' }}>
                   All Files Received!
                 </h2>
@@ -707,7 +707,7 @@ export default function ReceivePage() {
                             textDecoration: 'none', flexShrink: 0, transition: 'all 0.2s',
                           }}
                         >
-                          ↓ Save
+                          <div className="flex items-center gap-1"><Download size={14} /> Save</div>
                         </a>
                       </div>
                     ))}
@@ -737,7 +737,7 @@ export default function ReceivePage() {
                   onMouseEnter={e => e.target.style.background = 'rgba(255,255,255,0.11)'}
                   onMouseLeave={e => e.target.style.background = 'rgba(255,255,255,0.07)'}
                 >
-                  📥 Receive More Files
+                  <div className="flex items-center justify-center gap-2"><Download size={20} /> Receive More Files</div>
                 </button>
               </div>
             )}
@@ -745,8 +745,8 @@ export default function ReceivePage() {
             {/* ──────────── ERROR states ──────────── */}
             {(status === 'invalid' || status === 'full' || status === 'error' || status === 'expired') && (
               <div style={{ textAlign: 'center', padding: '0.5rem 0' }}>
-                <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>
-                  {status === 'full' ? '🚫' : status === 'expired' ? '⌛' : '❌'}
+                <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
+                  {status === 'full' ? <Ban size={64} className="text-red-500" /> : status === 'expired' ? <Hourglass size={64} className="text-yellow-500" /> : <XCircle size={64} className="text-red-500" />}
                 </div>
                 <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.25rem', marginBottom: '0.5rem' }}>
                   {status === 'invalid' && 'Room Not Found'}

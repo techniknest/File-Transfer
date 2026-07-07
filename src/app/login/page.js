@@ -4,6 +4,8 @@ import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { showToast } from '../components/Toast';
+import { Zap, XCircle, Eye, EyeOff, Lock, Folder } from 'lucide-react';
+
 
 function LoginForm() {
   const router = useRouter();
@@ -84,7 +86,7 @@ function LoginForm() {
             className="gradient-brand animate-glow"
             style={{ width: '48px', height: '48px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
           >
-            <span style={{ color: 'white', fontSize: '1.5rem' }}>⚡</span>
+            <Zap size={24} className="text-white" />
           </div>
           <div>
             <span style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '1.4rem', display: 'block', lineHeight: 1.1 }}>P2P Transfer</span>
@@ -113,7 +115,7 @@ function LoginForm() {
             fontSize: '0.95rem',
             fontWeight: 500,
           }}>
-            <span>❌</span>
+            <span style={{ display: 'flex', alignItems: 'center' }}><XCircle size={18} /></span>
             <span>{error}</span>
           </div>
         )}
@@ -192,7 +194,7 @@ function LoginForm() {
                 }}
                 aria-label={showPwd ? 'Hide password' : 'Show password'}
               >
-                {showPwd ? '🙈' : '👁️'}
+                {showPwd ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
           </div>
@@ -218,7 +220,7 @@ function LoginForm() {
                 <span style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid white', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
                 Signing in...
               </span>
-            ) : '🔐 Sign In'}
+            ) : <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><Lock size={20} /> Sign In</span>}
           </button>
         </form>
 
@@ -249,9 +251,13 @@ function LoginForm() {
           paddingTop: '1.5rem',
           borderTop: '1px solid var(--border-default)',
         }}>
-          {['🔒 End-to-end encrypted', '⚡ WebRTC P2P', '📁 No size limits'].map((f) => (
+          {[
+            { text: 'End-to-end encrypted', icon: <Lock size={14} /> },
+            { text: 'WebRTC P2P', icon: <Zap size={14} /> },
+            { text: 'No size limits', icon: <Folder size={14} /> }
+          ].map((f) => (
             <span
-              key={f}
+              key={f.text}
               style={{
                 fontSize: '0.75rem',
                 color: 'var(--text-muted)',
@@ -259,9 +265,10 @@ function LoginForm() {
                 border: '1px solid var(--border-default)',
                 borderRadius: '999px',
                 padding: '0.3rem 0.75rem',
+                display: 'flex', alignItems: 'center', gap: '0.3rem'
               }}
             >
-              {f}
+              {f.icon} {f.text}
             </span>
           ))}
         </div>

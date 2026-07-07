@@ -1,5 +1,7 @@
 'use client';
 import { useEffect } from 'react';
+import { RefreshCw, Home } from 'lucide-react';
+
 import Link from 'next/link';
 
 export default function GlobalError({ error, reset }) {
@@ -62,15 +64,19 @@ export default function GlobalError({ error, reset }) {
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-          <button
-            onClick={() => reset()}
-            className="btn btn-primary"
-            style={{ padding: '0.875rem 1.5rem', fontWeight: 700 }}
+          <button 
+            onClick={() => reset()} 
+            className="btn btn-primary" 
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', padding: '0.875rem 1.5rem', fontWeight: 700 }}
           >
-            🔄 Try Again
+            <RefreshCw size={20} /> Try Again
           </button>
-          <Link href="/" className="btn btn-secondary" style={{ padding: '0.875rem 1.5rem', fontWeight: 700 }}>
-            🏠 Go Home
+          <Link 
+            href="/" 
+            className="btn btn-secondary" 
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', padding: '0.875rem 1.5rem', fontWeight: 700, textDecoration: 'none' }}
+          >
+            <Home size={20} /> Go Home
           </Link>
         </div>
       </div>

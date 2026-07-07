@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { showToast } from '../components/Toast';
+import { Zap, XCircle, Eye, EyeOff, Rocket, CheckCircle, Lock } from 'lucide-react';
+
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -112,7 +114,7 @@ export default function RegisterPage() {
               boxShadow: '0 4px 20px rgba(139,92,246,0.4)',
             }}
           >
-            <span style={{ color: 'white', fontSize: '1.5rem' }}>⚡</span>
+            <Zap size={24} className="text-white" />
           </div>
           <div>
             <span style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '1.4rem', display: 'block', lineHeight: 1.1 }}>P2P Transfer</span>
@@ -134,7 +136,7 @@ export default function RegisterPage() {
             color: '#f87171', borderRadius: '0.75rem', padding: '1rem 1.25rem',
             marginBottom: '1.75rem', fontSize: '0.95rem', fontWeight: 500,
           }}>
-            <span>❌</span><span>{error}</span>
+            <span style={{ display: 'flex', alignItems: 'center' }}><XCircle size={18} /></span><span>{error}</span>
           </div>
         )}
 
@@ -201,7 +203,7 @@ export default function RegisterPage() {
                   color: 'var(--text-secondary)', fontSize: '1.25rem',
                 }}
               >
-                {showPwd ? '🙈' : '👁️'}
+                {showPwd ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
             {/* Password strength bar */}
@@ -264,7 +266,7 @@ export default function RegisterPage() {
                 <span style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid white', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
                 Creating account...
               </span>
-            ) : '🚀 Create Free Account'}
+            ) : <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><Rocket size={20} /> Create Free Account</span>}
           </button>
         </form>
 
@@ -282,12 +284,17 @@ export default function RegisterPage() {
           display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap',
           marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-default)',
         }}>
-          {['✅ Free forever', '🔒 No data stored', '⚡ Instant transfers'].map((f) => (
-            <span key={f} style={{
+          {[
+            { text: 'Free forever', icon: <CheckCircle size={14} /> },
+            { text: 'No data stored', icon: <Lock size={14} /> },
+            { text: 'Instant transfers', icon: <Zap size={14} /> }
+          ].map((f) => (
+            <span key={f.text} style={{
               fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-glass)',
               border: '1px solid var(--border-default)', borderRadius: '999px', padding: '0.3rem 0.75rem',
+              display: 'flex', alignItems: 'center', gap: '0.3rem'
             }}>
-              {f}
+              {f.icon} {f.text}
             </span>
           ))}
         </div>

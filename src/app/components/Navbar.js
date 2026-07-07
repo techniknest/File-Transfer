@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useState } from 'react';
 import { useTheme } from './ThemeProvider';
+import { Zap, Moon, Sun, Menu, X } from 'lucide-react';
 
 const NAV_LINKS = [
   { href: '/about', label: 'About' },
@@ -29,7 +30,7 @@ export default function Navbar() {
         {/* Logo */}
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', textDecoration: 'none' }}>
           <div className="gradient-brand" style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(99,102,241,0.4)' }}>
-            <span style={{ fontSize: '1.1rem' }}>⚡</span>
+            <Zap className="text-white" size={20} />
           </div>
           <span style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.01em' }}>P2P Transfer</span>
         </Link>
@@ -59,7 +60,7 @@ export default function Navbar() {
             aria-label="Toggle theme"
             style={{ fontSize: '1.1rem' }}
           >
-            {theme === 'dark' ? '🌙' : '☀️'}
+            {theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
 
           {session ? (
@@ -85,7 +86,7 @@ export default function Navbar() {
             aria-label="Menu"
             style={{ fontSize: '1.1rem' }}
           >
-            {menuOpen ? '✕' : '☰'}
+            {menuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
       </div>

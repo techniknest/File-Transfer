@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { Info, CheckCircle, AlertTriangle, XCircle, X } from 'lucide-react';
 
 // Global toast emitter — usable from any file (no sessionStorage/localStorage)
 let globalAddToast = null;
@@ -17,10 +18,10 @@ export function showToast(message, type = 'info', duration = 4000) {
 }
 
 const ICONS = {
-  success: '✅',
-  error: '❌',
-  warning: '⚠️',
-  info: 'ℹ️',
+  success: <CheckCircle size={18} />,
+  error: <XCircle size={18} />,
+  warning: <AlertTriangle size={18} />,
+  info: <Info size={18} />,
 };
 
 const STYLES = {
@@ -54,9 +55,12 @@ function ToastItem({ id, message, type, duration, onClose }) {
         transform: exiting ? 'translateX(120%)' : 'translateX(0)',
         transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
         pointerEvents: 'all',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
       }}
     >
-      <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>{ICONS[type] || 'ℹ️'}</span>
+      <span style={{ display: 'flex', alignItems: 'center' }}>{ICONS[type] || ICONS.info}</span>
       <span style={{ flex: 1, fontSize: '0.9rem', fontWeight: 600, lineHeight: 1.4 }}>{message}</span>
       <button
         onClick={handleClose}
@@ -69,10 +73,12 @@ function ToastItem({ id, message, type, duration, onClose }) {
           fontSize: '1rem',
           padding: '0 0.25rem',
           lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
         }}
         aria-label="Close notification"
       >
-        ×
+        <X size={16} />
       </button>
     </div>
   );

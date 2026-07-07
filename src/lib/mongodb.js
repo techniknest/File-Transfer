@@ -16,10 +16,10 @@ async function connectDB() {
       });
     }
     global.mongoose.conn = await global.mongoose.promise;
-    console.log('✅ MongoDB connected');
+    console.log('MongoDB connected successfully');
     return global.mongoose.conn;
   } catch (error) {
-    console.error('⚠️ MongoDB connection error:', error.message);
+    console.error('MongoDB connection error:', error.message);
     return null;
   }
 }

@@ -3,12 +3,13 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTheme } from '../components/ThemeProvider';
+import { BarChart3, Users, Package, Heart, Shield, Moon, Sun, ArrowLeft, Menu } from 'lucide-react';
 
 const ADMIN_NAV = [
-  { href: '/admin', label: 'Overview', icon: '📊' },
-  { href: '/admin/users', label: 'Users', icon: '👥' },
-  { href: '/admin/transfers', label: 'Transfers', icon: '📦' },
-  { href: '/admin/health', label: 'System Health', icon: '❤️' },
+  { href: '/admin', label: 'Overview', icon: <BarChart3 size={20} /> },
+  { href: '/admin/users', label: 'Users', icon: <Users size={20} /> },
+  { href: '/admin/transfers', label: 'Transfers', icon: <Package size={20} /> },
+  { href: '/admin/health', label: 'System Health', icon: <Heart size={20} /> },
 ];
 
 export default function AdminLayout({ children }) {
@@ -48,7 +49,7 @@ export default function AdminLayout({ children }) {
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.5rem', padding: '0 0.25rem' }}>
             <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: '1rem' }}>🛡️</span>
+              <Shield size={18} className="text-white" />
             </div>
             <div>
               <p style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '1rem', lineHeight: 1.2 }}>Admin Panel</p>
@@ -75,7 +76,7 @@ export default function AdminLayout({ children }) {
 
             <div className="divider" style={{ margin: '0.75rem 0' }} />
             <a href="/dashboard" className="sidebar-nav-item">
-              <span style={{ fontSize: '1.1rem' }}>← </span>
+              <span style={{ display: 'flex', alignItems: 'center', marginRight: '0.5rem' }}><ArrowLeft size={18} /></span>
               Back to Dashboard
             </a>
           </nav>
@@ -93,8 +94,8 @@ export default function AdminLayout({ children }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={toggleTheme} className="btn btn-ghost btn-sm" style={{ flex: 1 }}>
-              {theme === 'dark' ? '🌙' : '☀️'}
+            <button onClick={toggleTheme} className="btn btn-ghost btn-sm" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
             </button>
             <button onClick={() => signOut({ callbackUrl: '/login' })} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', flex: 1 }}>
               Exit
@@ -108,8 +109,8 @@ export default function AdminLayout({ children }) {
         {/* Header */}
         <header className="glass" style={{ borderBottom: '1px solid var(--border-default)', padding: '0 1.5rem', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <button onClick={() => setSidebarOpen(true)} className="btn btn-ghost btn-icon" style={{ display: 'none' }}>☰</button>
-            <span className="badge badge-warning">🛡️ Admin Mode</span>
+            <button onClick={() => setSidebarOpen(true)} className="btn btn-ghost btn-icon" style={{ display: 'none' }}><Menu size={20} /></button>
+            <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Shield size={14} /> Admin Mode</span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <a href="/dashboard" className="btn btn-ghost btn-sm">← Dashboard</a>

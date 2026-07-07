@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import { Rocket, Shield, Zap, FolderSync, Laptop, Link as LinkIcon, Plus } from 'lucide-react';
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
@@ -45,7 +46,7 @@ export default function HomePage() {
 
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/register" className="btn btn-primary btn-lg">
-              🚀 Start Transferring Free
+              <Rocket className="w-5 h-5" /> Start Transferring Free
             </Link>
             <Link href="/how-it-works" className="btn btn-secondary btn-lg">
               Learn More
@@ -80,15 +81,15 @@ export default function HomePage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
             {[
-              { icon: '🔒', title: 'End-to-End Secure', desc: 'Signaling coordinates connection details but actual data flows directly between browsers via secure Datachannels.' },
-              { icon: '⚡', title: 'Speed Limitless', desc: 'Transfer speeds are governed strictly by your client and recipient ISP capacities—no throttling limits.' },
-              { icon: '📁', title: 'Real-time Streaming', desc: 'Receiver starts compiling and downloading the payload instantly as the sender streams chunks live.' },
-              { icon: '💻', title: 'Device Agnostic', desc: 'Runs entirely in the web browser. No plugins, no installers, no mobile packages necessary.' },
-              { icon: '🔗', title: '24 Hour Lifespan', desc: 'Lobby signaling configurations expire securely after 24 hours. Rooms clean up automatically.' },
-              { icon: '➕', title: 'On-the-fly Batching', desc: 'Add files to an active room session dynamically without renegotiating candidate handshakes.' }
+              { icon: <Shield className="w-8 h-8" />, title: 'End-to-End Secure', desc: 'Signaling coordinates connection details but actual data flows directly between browsers via secure Datachannels.' },
+              { icon: <Zap className="w-8 h-8" />, title: 'Speed Limitless', desc: 'Transfer speeds are governed strictly by your client and recipient ISP capacities—no throttling limits.' },
+              { icon: <FolderSync className="w-8 h-8" />, title: 'Real-time Streaming', desc: 'Receiver starts compiling and downloading the payload instantly as the sender streams chunks live.' },
+              { icon: <Laptop className="w-8 h-8" />, title: 'Device Agnostic', desc: 'Runs entirely in the web browser. No plugins, no installers, no mobile packages necessary.' },
+              { icon: <LinkIcon className="w-8 h-8" />, title: '24 Hour Lifespan', desc: 'Lobby signaling configurations expire securely after 24 hours. Rooms clean up automatically.' },
+              { icon: <Plus className="w-8 h-8" />, title: 'On-the-fly Batching', desc: 'Add files to an active room session dynamically without renegotiating candidate handshakes.' }
             ].map((f, idx) => (
               <div key={idx} className="card card-hover" style={{ padding: '2rem' }}>
-                <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>{f.icon}</div>
+                <div style={{ color: '#818cf8', marginBottom: '1rem' }}>{f.icon}</div>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>{f.title}</h3>
                 <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{f.desc}</p>
               </div>

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { AlertTriangle, Users, CheckCircle, Ban, UserPlus, Package, XCircle, Loader, BarChart3, HardDrive, Link as LinkIcon, Heart } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -60,7 +61,7 @@ export default function AdminOverviewPage() {
   if (error) {
     return (
       <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
-        <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>⚠️</span>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}><AlertTriangle size={48} className="text-yellow-500" /></div>
         <p style={{ color: 'var(--danger)', fontWeight: 600 }}>{error}</p>
       </div>
     );
@@ -87,10 +88,10 @@ export default function AdminOverviewPage() {
       <div style={{ marginBottom: '1rem' }}>
         <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.875rem' }}>Users</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }} className="stagger">
-          <StatCard icon="👥" label="Total Users" value={users.totalUsers ?? '—'} color="#6366f1" gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" />
-          <StatCard icon="✅" label="Active Users" value={users.activeUsers ?? '—'} color="#10b981" gradient="linear-gradient(135deg, #10b981, #059669)" />
-          <StatCard icon="🚫" label="Suspended" value={users.suspendedUsers ?? '—'} color="#ef4444" gradient="linear-gradient(135deg, #ef4444, #dc2626)" />
-          <StatCard icon="🆕" label="New This Week" value={users.newUsersThisWeek ?? '—'} color="#06b6d4" gradient="linear-gradient(135deg, #06b6d4, #0891b2)" sub="7 days" />
+          <StatCard icon={<Users size={24} className="text-white" />} label="Total Users" value={users.totalUsers ?? '—'} color="#6366f1" gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" />
+          <StatCard icon={<CheckCircle size={24} className="text-white" />} label="Active Users" value={users.activeUsers ?? '—'} color="#10b981" gradient="linear-gradient(135deg, #10b981, #059669)" />
+          <StatCard icon={<Ban size={24} className="text-white" />} label="Suspended" value={users.suspendedUsers ?? '—'} color="#ef4444" gradient="linear-gradient(135deg, #ef4444, #dc2626)" />
+          <StatCard icon={<UserPlus size={24} className="text-white" />} label="New This Week" value={users.newUsersThisWeek ?? '—'} color="#06b6d4" gradient="linear-gradient(135deg, #06b6d4, #0891b2)" sub="7 days" />
         </div>
       </div>
 
@@ -98,25 +99,25 @@ export default function AdminOverviewPage() {
       <div>
         <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.875rem' }}>Transfers</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }} className="stagger">
-          <StatCard icon="📦" label="Total Transfers" value={transfers.totalTransfers ?? '—'} color="#6366f1" gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" />
-          <StatCard icon="✅" label="Successful" value={transfers.successTransfers ?? '—'} color="#10b981" gradient="linear-gradient(135deg, #10b981, #059669)" />
-          <StatCard icon="❌" label="Failed" value={transfers.failedTransfers ?? '—'} color="#ef4444" gradient="linear-gradient(135deg, #ef4444, #dc2626)" />
-          <StatCard icon="🔴" label="In Progress" value={transfers.inProgressTransfers ?? '—'} color="#f59e0b" gradient="linear-gradient(135deg, #f59e0b, #d97706)" />
-          <StatCard icon="📊" label="Success Rate" value={`${transfers.successRate ?? 0}%`} color="#8b5cf6" gradient="linear-gradient(135deg, #8b5cf6, #7c3aed)" />
-          <StatCard icon="💾" label="Data Transferred" value={formatBytes(transfers.totalBytes)} color="#06b6d4" gradient="linear-gradient(135deg, #06b6d4, #0891b2)" />
-          <StatCard icon="🔗" label="Active Sessions" value={transfers.activeSessions ?? 0} color="#10b981" gradient="linear-gradient(135deg, #10b981, #059669)" sub="live" />
+          <StatCard icon={<Package size={24} className="text-white" />} label="Total Transfers" value={transfers.totalTransfers ?? '—'} color="#6366f1" gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" />
+          <StatCard icon={<CheckCircle size={24} className="text-white" />} label="Successful" value={transfers.successTransfers ?? '—'} color="#10b981" gradient="linear-gradient(135deg, #10b981, #059669)" />
+          <StatCard icon={<XCircle size={24} className="text-white" />} label="Failed" value={transfers.failedTransfers ?? '—'} color="#ef4444" gradient="linear-gradient(135deg, #ef4444, #dc2626)" />
+          <StatCard icon={<Loader size={24} className="text-white" />} label="In Progress" value={transfers.inProgressTransfers ?? '—'} color="#f59e0b" gradient="linear-gradient(135deg, #f59e0b, #d97706)" />
+          <StatCard icon={<BarChart3 size={24} className="text-white" />} label="Success Rate" value={`${transfers.successRate ?? 0}%`} color="#8b5cf6" gradient="linear-gradient(135deg, #8b5cf6, #7c3aed)" />
+          <StatCard icon={<HardDrive size={24} className="text-white" />} label="Data Transferred" value={formatBytes(transfers.totalBytes)} color="#06b6d4" gradient="linear-gradient(135deg, #06b6d4, #0891b2)" />
+          <StatCard icon={<LinkIcon size={24} className="text-white" />} label="Active Sessions" value={transfers.activeSessions ?? 0} color="#10b981" gradient="linear-gradient(135deg, #10b981, #059669)" sub="live" />
         </div>
       </div>
 
       {/* Quick Links */}
       <div style={{ marginTop: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
         {[
-          { href: '/admin/users', icon: '👥', label: 'Manage Users', desc: 'View, suspend, and delete users' },
-          { href: '/admin/transfers', icon: '📦', label: 'Transfer Records', desc: 'Audit all file transfers' },
-          { href: '/admin/health', icon: '❤️', label: 'System Health', desc: 'Monitor server and database' },
+          { href: '/admin/users', icon: <Users size={32} className="text-indigo-400" />, label: 'Manage Users', desc: 'View, suspend, and delete users' },
+          { href: '/admin/transfers', icon: <Package size={32} className="text-indigo-400" />, label: 'Transfer Records', desc: 'Audit all file transfers' },
+          { href: '/admin/health', icon: <Heart size={32} className="text-indigo-400" />, label: 'System Health', desc: 'Monitor server and database' },
         ].map(card => (
           <a key={card.href} href={card.href} className="card card-hover" style={{ padding: '1.5rem', display: 'block', textDecoration: 'none' }}>
-            <span style={{ fontSize: '1.75rem', display: 'block', marginBottom: '0.75rem' }}>{card.icon}</span>
+            <span style={{ display: 'block', marginBottom: '0.75rem' }}>{card.icon}</span>
             <h3 style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.375rem' }}>{card.label}</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{card.desc}</p>
           </a>

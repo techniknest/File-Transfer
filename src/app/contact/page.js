@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import { Mail, Building, Clock } from 'lucide-react';
+
 import { useToast } from '../components/Toast';
 
 export default function ContactPage() {
@@ -56,7 +58,9 @@ export default function ContactPage() {
 
               <div className="glass-card" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-                  <div style={{ fontSize: '1.5rem', background: 'rgba(99,102,241,0.1)', padding: '0.75rem', borderRadius: '0.75rem' }}>📧</div>
+                  <div style={{ background: 'rgba(99,102,241,0.1)', padding: '0.75rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Mail size={24} className="text-indigo-500" />
+                  </div>
                   <div>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>Email Support</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>support@p2ptransfer.com</p>
@@ -64,7 +68,9 @@ export default function ContactPage() {
                 </div>
                 
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-                  <div style={{ fontSize: '1.5rem', background: 'rgba(16,185,129,0.1)', padding: '0.75rem', borderRadius: '0.75rem' }}>🏢</div>
+                  <div style={{ background: 'rgba(16,185,129,0.1)', padding: '0.75rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Building size={24} className="text-emerald-500" />
+                  </div>
                   <div>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>Headquarters</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.5 }}>123 Innovation Drive<br/>Tech Hub District<br/>San Francisco, CA 94103</p>
@@ -72,7 +78,9 @@ export default function ContactPage() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-                  <div style={{ fontSize: '1.5rem', background: 'rgba(245,158,11,0.1)', padding: '0.75rem', borderRadius: '0.75rem' }}>🕒</div>
+                  <div style={{ background: 'rgba(245,158,11,0.1)', padding: '0.75rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Clock size={24} className="text-amber-500" />
+                  </div>
                   <div>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>Response Time</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Usually within 24 hours</p>

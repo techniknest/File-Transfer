@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import { Rocket, Lock, Lightbulb } from 'lucide-react';
 
 export default function AboutPage() {
   const [mounted, setMounted] = useState(false);
@@ -64,12 +65,12 @@ export default function AboutPage() {
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
               {[
-                { icon: '🚀', title: 'Innovation First', desc: 'We build solutions that push boundaries.' },
-                { icon: '🔐', title: 'Privacy Focused', desc: 'Your data belongs to you, always.' },
-                { icon: '💡', title: 'Open & Transparent', desc: 'Simple, honest technology for everyone.' },
+                { icon: <Rocket size={40} className="text-indigo-400" />, title: 'Innovation First', desc: 'We build solutions that push boundaries.' },
+                { icon: <Lock size={40} className="text-indigo-400" />, title: 'Privacy Focused', desc: 'Your data belongs to you, always.' },
+                { icon: <Lightbulb size={40} className="text-indigo-400" />, title: 'Open & Transparent', desc: 'Simple, honest technology for everyone.' },
               ].map((item, i) => (
                 <div key={i} className="card card-hover" style={{ padding: '2rem' }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '1rem', filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.3))' }}>{item.icon}</div>
+                  <div style={{ marginBottom: '1rem', color: '#818cf8', filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.3))' }}>{item.icon}</div>
                   <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>{item.title}</h3>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{item.desc}</p>
                 </div>

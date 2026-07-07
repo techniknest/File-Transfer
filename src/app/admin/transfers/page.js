@@ -7,6 +7,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend, PieChart, Pie, Cell
 } from 'recharts';
+import { BarChart3, ClipboardList, Package, HardDrive, TrendingUp, XCircle, X, File } from 'lucide-react';
 
 const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#6366f1'];
 
@@ -137,14 +138,16 @@ export default function AdminTransfersPage() {
           <button
             onClick={() => setActiveTab('analytics')}
             className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >
-            📊 Analytics Dashboard
+            <BarChart3 size={18} /> Analytics Dashboard
           </button>
           <button
             onClick={() => setActiveTab('records')}
             className={`btn ${activeTab === 'records' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >
-            📋 Transfer Audit Logs
+            <ClipboardList size={18} /> Transfer Audit Logs
           </button>
         </div>
       </div>
@@ -155,10 +158,10 @@ export default function AdminTransfersPage() {
           {/* Overview Stat Widgets */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
             {[
-              { icon: '📦', label: 'Total Transfers', value: summary.totalTransfers },
-              { icon: '💾', label: 'Total Data Shared', value: formatBytes(summary.totalBytes) },
-              { icon: '📈', label: 'Transfer Success Rate', value: `${summary.successRate}%` },
-              { icon: '❌', label: 'Failed Transfers', value: summary.failedTransfers }
+              { icon: <Package size={24} className="text-white" />, label: 'Total Transfers', value: summary.totalTransfers },
+              { icon: <HardDrive size={24} className="text-white" />, label: 'Total Data Shared', value: formatBytes(summary.totalBytes) },
+              { icon: <TrendingUp size={24} className="text-white" />, label: 'Transfer Success Rate', value: `${summary.successRate}%` },
+              { icon: <XCircle size={24} className="text-white" />, label: 'Failed Transfers', value: summary.failedTransfers }
             ].map((s, idx) => (
               <div key={idx} className="stat-card" style={{ padding: '1.25rem' }}>
                 <span style={{ fontSize: '1.5rem', display: 'block', marginBottom: '0.5rem' }}>{s.icon}</span>
@@ -300,7 +303,7 @@ export default function AdminTransfersPage() {
             <LoadingSkeleton type="table" count={6} />
           ) : records.length === 0 ? (
             <EmptyState
-              icon="📋"
+              icon={<ClipboardList size={48} className="text-gray-400" />}
               title="No transfers registered"
               description="Transfers will appear here once users begin sharing files."
             />
@@ -372,7 +375,7 @@ export default function AdminTransfersPage() {
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>Transfer Session Inspection</h2>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Link ID: <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{selectedRecord.linkId}</span></p>
               </div>
-              <button onClick={() => setSelectedRecord(null)} className="btn btn-ghost btn-icon">✕</button>
+              <button onClick={() => setSelectedRecord(null)} className="btn btn-ghost btn-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
             </div>
 
             {/* Metadata Fields */}
@@ -402,7 +405,7 @@ export default function AdminTransfersPage() {
                 <div style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-default)', borderRadius: '0.75rem', padding: '0.75rem', maxHeight: '150px', overflowY: 'auto' }}>
                   {selectedRecord.fileNames.map((name, idx) => (
                     <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', padding: '0.25rem 0' }}>
-                      <span>📄</span>
+                      <File size={16} />
                       <span style={{ wordBreak: 'break-all' }}>{name}</span>
                     </div>
                   ))}
