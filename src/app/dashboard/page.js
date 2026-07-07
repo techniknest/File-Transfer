@@ -6,7 +6,10 @@ import Link from 'next/link';
 import io from 'socket.io-client';
 import TransferModal from '../components/TransferModal';
 import { showToast } from '../components/Toast';
-import { Zap, Upload, Download, Folder } from 'lucide-react';
+import {
+  Zap, Upload, Download, Folder, ArrowLeft, Plus,
+  File, X, LinkIcon, Shield, CloudOff
+} from 'lucide-react';
 
 const ICE_SERVERS = {
   iceServers: [
@@ -14,8 +17,8 @@ const ICE_SERVERS = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-  ]
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ],
 };
 
 const CHUNK_SIZE = 64 * 1024;
@@ -43,18 +46,15 @@ export default function Dashboard() {
   const [eta, setEta] = useState(0);
   const [currentFile, setCurrentFile] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Receive state
   const [receiveLink, setReceiveLink] = useState('');
-  const [receiveStatus, setReceiveStatus] = useState('idle');
-  const [receivedFiles, setReceivedFiles] = useState([]);
 
   const socketRef = useRef(null);
   const pcRef = useRef(null);
   const filesRef = useRef([]);
   const roomIdRef = useRef('');
-  const chunksRef = useRef([]);
-  const metaRef = useRef(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -80,162 +80,174 @@ export default function Dashboard() {
     reader.readAsArrayBuffer(file.slice(start, end));
   });
 
+  // ── STEP 1: User selects files — just update state, no link yet ──
   const handleFilesSelected = useCallback((selectedFiles) => {
     if (!selectedFiles || selectedFiles.length === 0) return;
-
-    const newFiles = [...filesRef.current, ...selectedFiles];
-    setFiles(newFiles);
+    const newFiles = [...filesRef.current, ...Array.from(selectedFiles)];
     filesRef.current = newFiles;
+    setFiles([...newFiles]);
+  }, []);
 
-    if (!roomIdRef.current) {
-      const id = generateRoomId();
-      setRoomId(id);
-      roomIdRef.current = id;
-
-      const link = `${window.location.origin}/receive?room=${id}`;
-      setShareLink(link);
-      setTransferStatus('waiting');
+  // ── STEP 2: User clicks "Generate Transfer Link" ──
+  const handleGenerateLink = useCallback(() => {
+    if (filesRef.current.length === 0) return;
+    if (roomIdRef.current) {
+      // Already have a room — just open the modal again
       setModalOpen(true);
+      return;
+    }
 
-      const socket = getSocket();
+    const id = generateRoomId();
+    setRoomId(id);
+    roomIdRef.current = id;
 
-      socket.off('receiver-joined');
-      socket.off('answer');
-      socket.off('ice-candidate');
+    const link = `${window.location.origin}/receive?room=${id}`;
+    setShareLink(link);
+    setTransferStatus('waiting');
+    setModalOpen(true);
 
-      const pendingCandidates = [];
+    const socket = getSocket();
+    socket.off('receiver-joined');
+    socket.off('answer');
+    socket.off('ice-candidate');
 
-      socket.on('receiver-joined', async () => {
-        setTransferStatus('connecting');
+    const pendingCandidates = [];
 
-        const pc = new RTCPeerConnection(ICE_SERVERS);
-        pcRef.current = pc;
+    socket.on('receiver-joined', async () => {
+      setTransferStatus('connecting');
 
-        const dc = pc.createDataChannel('fileTransfer', { ordered: true });
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      pcRef.current = pc;
+      const dc = pc.createDataChannel('fileTransfer', { ordered: true });
 
-        pc.onicecandidate = (e) => {
-          if (e.candidate) {
-            socket.emit('ice-candidate', { roomId: id, candidate: e.candidate });
-          }
-        };
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          socket.emit('ice-candidate', { roomId: id, candidate: e.candidate });
+        }
+      };
 
-        dc.onopen = async () => {
-          setTransferStatus('transferring');
+      dc.onopen = async () => {
+        setTransferStatus('transferring');
 
-          const totalBytes = filesRef.current.reduce((a, f) => a + f.size, 0);
-          let sentBytes = 0;
-          let lastTime = Date.now();
-          let lastBytes = 0;
+        const totalBytes = filesRef.current.reduce((a, f) => a + f.size, 0);
+        let sentBytes = 0;
+        let lastTime = Date.now();
+        let lastBytes = 0;
+
+        dc.send(JSON.stringify({
+          type: 'session-info',
+          totalFiles: filesRef.current.length,
+          totalBytes,
+        }));
+
+        for (let f = 0; f < filesRef.current.length; f++) {
+          const file = filesRef.current[f];
+          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+          setCurrentFile(file.name);
 
           dc.send(JSON.stringify({
-            type: 'session-info',
+            type: 'meta',
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type || 'application/octet-stream',
+            totalChunks,
+            fileIndex: f,
             totalFiles: filesRef.current.length,
-            totalBytes
           }));
 
-          for (let f = 0; f < filesRef.current.length; f++) {
-            const file = filesRef.current[f];
-            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-            setCurrentFile(file.name);
+          for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = await readChunk(file, start, end);
 
-            dc.send(JSON.stringify({
-              type: 'meta',
-              fileName: file.name,
-              fileSize: file.size,
-              fileType: file.type || 'application/octet-stream',
-              totalChunks,
-              fileIndex: f,
-              totalFiles: filesRef.current.length
-            }));
-
-            for (let i = 0; i < totalChunks; i++) {
-              const start = i * CHUNK_SIZE;
-              const end = Math.min(start + CHUNK_SIZE, file.size);
-              const chunk = await readChunk(file, start, end);
-
-              while (dc.bufferedAmount > 1024 * 1024) {
-                await new Promise(r => setTimeout(r, 50));
-              }
-
-              dc.send(chunk);
-              sentBytes += (end - start);
-
-              const now = Date.now();
-              const elapsed = (now - lastTime) / 1000;
-              if (elapsed >= 0.25) {
-                const delta = sentBytes - lastBytes;
-                const spd = delta / elapsed;
-                const remaining = totalBytes - sentBytes;
-                const etaVal = spd > 0 ? remaining / spd : 0;
-                lastTime = now;
-                lastBytes = sentBytes;
-                setProgress(Math.round((sentBytes / totalBytes) * 100));
-                setSpeed(spd);
-                setEta(etaVal);
-              }
+            while (dc.bufferedAmount > 1024 * 1024) {
+              await new Promise(r => setTimeout(r, 50));
             }
 
-            dc.send(JSON.stringify({ type: 'file-end', fileIndex: f }));
+            dc.send(chunk);
+            sentBytes += (end - start);
+
+            const now = Date.now();
+            const elapsed = (now - lastTime) / 1000;
+            if (elapsed >= 0.25) {
+              const delta = sentBytes - lastBytes;
+              const spd = delta / elapsed;
+              const remaining = totalBytes - sentBytes;
+              const etaVal = spd > 0 ? remaining / spd : 0;
+              lastTime = now;
+              lastBytes = sentBytes;
+              setProgress(Math.round((sentBytes / totalBytes) * 100));
+              setSpeed(spd);
+              setEta(etaVal);
+            }
           }
 
-          dc.send(JSON.stringify({ type: 'session-end' }));
-          setTransferStatus('done');
-          setProgress(100);
+          dc.send(JSON.stringify({ type: 'file-end', fileIndex: f }));
+        }
 
-          try {
-            await fetch('/api/transfers/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                roomId: id,
-                senderEmail: session?.user?.email,
-                files: filesRef.current.map(f => ({ fileName: f.name, fileSize: f.size, fileType: f.type })),
-                totalSize: totalBytes,
-              }),
-            });
-          } catch (_) {}
-        };
+        dc.send(JSON.stringify({ type: 'session-end' }));
+        setTransferStatus('done');
+        setProgress(100);
 
         try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          socket.emit('offer', { roomId: id, offer });
-        } catch (err) {
-          console.error('Error creating offer', err);
-        }
-      });
+          await fetch('/api/transfers/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomId: id,
+              senderEmail: session?.user?.email,
+              files: filesRef.current.map(f => ({ fileName: f.name, fileSize: f.size, fileType: f.type })),
+              totalSize: totalBytes,
+            }),
+          });
+        } catch (_) {}
+      };
 
-      socket.on('answer', async ({ answer }) => {
-        if (pcRef.current) {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-          for (const candidate of pendingCandidates) {
-            try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
-          }
-          pendingCandidates.length = 0;
-        }
-      });
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { roomId: id, offer });
+      } catch (err) {
+        console.error('Error creating offer', err);
+      }
+    });
 
-      socket.on('ice-candidate', async ({ candidate }) => {
-        if (pcRef.current && candidate) {
-          if (pcRef.current.remoteDescription) {
-            try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
-          } else {
-            pendingCandidates.push(candidate);
-          }
+    socket.on('answer', async ({ answer }) => {
+      if (pcRef.current) {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        for (const candidate of pendingCandidates) {
+          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
         }
-      });
+        pendingCandidates.length = 0;
+      }
+    });
 
-      socket.emit('create-room', id);
-    } else {
-      setFiles(newFiles);
-    }
+    socket.on('ice-candidate', async ({ candidate }) => {
+      if (pcRef.current && candidate) {
+        if (pcRef.current.remoteDescription) {
+          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
+        } else {
+          pendingCandidates.push(candidate);
+        }
+      }
+    });
+
+    socket.emit('create-room', id);
   }, [getSocket, session]);
 
   const handleAddMoreFiles = useCallback((moreFiles) => {
-    const newFiles = [...filesRef.current, ...moreFiles];
-    setFiles(newFiles);
+    const newFiles = [...filesRef.current, ...Array.from(moreFiles)];
     filesRef.current = newFiles;
+    setFiles([...newFiles]);
+    if (showToast) showToast(`${moreFiles.length} file${moreFiles.length > 1 ? 's' : ''} added to transfer`, 'success');
   }, []);
+
+  const removeFile = useCallback((idx) => {
+    if (transferStatus !== 'idle') return;
+    const updated = filesRef.current.filter((_, i) => i !== idx);
+    filesRef.current = updated;
+    setFiles([...updated]);
+  }, [transferStatus]);
 
   const handleModalClose = useCallback(() => {
     setModalOpen(false);
@@ -248,7 +260,17 @@ export default function Dashboard() {
     filesRef.current = [];
     roomIdRef.current = '';
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
+    if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; }
   }, []);
+
+  const handleGoBack = useCallback(() => {
+    if (transferStatus === 'transferring') return; // block during transfer
+    setView('home');
+    if (transferStatus === 'idle') {
+      setFiles([]);
+      filesRef.current = [];
+    }
+  }, [transferStatus]);
 
   const startReceiver = useCallback(() => {
     let id;
@@ -258,7 +280,6 @@ export default function Dashboard() {
     } catch (_) {
       id = receiveLink.trim().toUpperCase();
     }
-
     if (!id) return;
     router.push(`/receive?room=${id}`);
   }, [receiveLink, router]);
@@ -300,7 +321,8 @@ export default function Dashboard() {
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-12">
-        {/* HOME */}
+
+        {/* ── HOME ── */}
         {view === 'home' && (
           <div>
             <div className="text-center mb-12">
@@ -309,6 +331,7 @@ export default function Dashboard() {
               </h1>
               <p className="text-gray-400 text-lg">P2P encrypted transfers. No cloud, no size limits.</p>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <button
                 onClick={() => setView('send')}
@@ -318,7 +341,7 @@ export default function Dashboard() {
                   <Upload className="text-white" size={32} />
                 </div>
                 <h2 className="text-xl font-bold mb-2">Send Files</h2>
-                <p className="text-gray-400 text-sm leading-relaxed">Select files and generate a secure transfer link. Share with anyone.</p>
+                <p className="text-gray-400 text-sm leading-relaxed">Select your files, generate a secure transfer link, and share it with anyone.</p>
                 <div className="flex gap-2 mt-4 flex-wrap">
                   {['No size limit', 'Encrypted', 'Instant'].map(t => (
                     <span key={t} className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded-full text-xs font-medium">{t}</span>
@@ -342,36 +365,62 @@ export default function Dashboard() {
                 </div>
               </button>
             </div>
+
+            {/* Quick feature badges */}
+            <div className="flex flex-wrap gap-3 justify-center mt-10 text-sm text-gray-500">
+              {[
+                { icon: <Shield size={14} />, label: 'End-to-End Encrypted' },
+                { icon: <CloudOff size={14} />, label: 'No Cloud Storage' },
+                { icon: <Zap size={14} />, label: 'Full Speed Transfer' },
+              ].map((b, i) => (
+                <div key={i} className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-full">
+                  {b.icon} {b.label}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* SEND */}
+        {/* ── SEND ── */}
         {view === 'send' && (
           <div>
-            <button onClick={() => { setView('home'); handleModalClose(); }} className="text-gray-400 hover:text-white mb-6 flex items-center gap-2 transition-all text-sm">
-              ← Back
+            <button
+              onClick={handleGoBack}
+              className="text-gray-400 hover:text-white mb-6 flex items-center gap-2 transition-all text-sm"
+            >
+              <ArrowLeft size={16} /> Back
             </button>
+
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
               <h2 className="text-2xl font-bold mb-2">Send Files</h2>
-              <p className="text-gray-400 mb-8">Select files to generate a secure P2P transfer link.</p>
+              <p className="text-gray-400 mb-8">
+                Select all your files first, then generate a transfer link to share.
+              </p>
 
+              {/* Drop zone */}
               <div
                 onClick={() => document.getElementById('dashFileInput').click()}
-                onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#6366f1'; }}
-                onDragLeave={e => { e.currentTarget.style.borderColor = ''; }}
+                onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
                 onDrop={e => {
                   e.preventDefault();
-                  e.currentTarget.style.borderColor = '';
+                  setIsDragging(false);
                   const dropped = [...e.dataTransfer.files];
                   if (dropped.length) handleFilesSelected(dropped);
                 }}
-                className="border-2 border-dashed border-gray-700 rounded-xl p-16 text-center hover:border-blue-500 transition-all cursor-pointer hover:bg-blue-500/5"
+                className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
+                  isDragging
+                    ? 'border-blue-400 bg-blue-500/10 scale-[1.01]'
+                    : 'border-gray-700 hover:border-blue-500 hover:bg-blue-500/5'
+                }`}
               >
                 <div className="flex justify-center mb-4">
-                  <Folder size={64} className="text-indigo-400" />
+                  <Folder size={56} className="text-indigo-400" />
                 </div>
-                <p className="text-white font-bold text-xl mb-2">Click to select or drag & drop files</p>
-                <p className="text-gray-400">Any file type • No size limit</p>
+                <p className="text-white font-bold text-xl mb-2">
+                  {isDragging ? 'Drop files here' : 'Click to select or drag & drop'}
+                </p>
+                <p className="text-gray-400">Any file type · No size limit · Select multiple</p>
                 <input
                   id="dashFileInput"
                   type="file"
@@ -381,31 +430,72 @@ export default function Dashboard() {
                 />
               </div>
 
-              {files.length > 0 && !modalOpen && (
-                <button onClick={() => setModalOpen(true)} className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl transition-all text-lg">
-                  View Transfer Link
-                </button>
+              {/* File list */}
+              {files.length > 0 && (
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-gray-400 text-sm font-semibold">
+                      {files.length} FILE{files.length !== 1 ? 'S' : ''} SELECTED — {formatBytes(files.reduce((a, f) => a + f.size, 0))}
+                    </p>
+                    <button
+                      onClick={() => document.getElementById('dashAddMoreInput').click()}
+                      className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1 transition-colors"
+                    >
+                      <Plus size={14} /> Add More
+                    </button>
+                    <input
+                      id="dashAddMoreInput"
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={e => { if (e.target.files?.length) handleFilesSelected([...e.target.files]); e.target.value = ''; }}
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto flex flex-col gap-2 mb-6">
+                    {files.map((f, i) => (
+                      <div key={i} className="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-2.5">
+                        <File size={18} className="text-gray-400 flex-shrink-0" />
+                        <span className="text-white text-sm flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap">{f.name}</span>
+                        <span className="text-gray-400 text-xs flex-shrink-0">{formatBytes(f.size)}</span>
+                        {transferStatus === 'idle' && !roomIdRef.current && (
+                          <button onClick={() => removeFile(i)} className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0">
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Generate Link button */}
+                  <button
+                    onClick={handleGenerateLink}
+                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 rounded-xl transition-all text-lg flex items-center justify-center gap-2 hover:-translate-y-0.5 shadow-lg shadow-blue-600/25"
+                  >
+                    <LinkIcon size={20} />
+                    {roomIdRef.current ? 'View Transfer Link' : 'Generate Transfer Link'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
         )}
 
-        {/* RECEIVE */}
+        {/* ── RECEIVE ── */}
         {view === 'receive' && (
           <div>
             <button onClick={() => setView('home')} className="text-gray-400 hover:text-white mb-6 flex items-center gap-2 transition-all text-sm">
-              ← Back
+              <ArrowLeft size={16} /> Back
             </button>
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
               <h2 className="text-2xl font-bold mb-2">Receive Files</h2>
-              <p className="text-gray-400 mb-8">Paste a transfer link to receive files directly.</p>
+              <p className="text-gray-400 mb-8">Paste a transfer link to receive files directly from the sender.</p>
 
               <div className="space-y-4">
                 <div>
                   <label className="text-gray-300 font-medium text-sm mb-2 block">Transfer Link</label>
                   <input
                     type="text"
-                    placeholder="https://...?room=XXXXXX"
+                    placeholder="https://…/receive?room=XXXXXX or room code"
                     value={receiveLink}
                     onChange={e => setReceiveLink(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && receiveLink.trim()) startReceiver(); }}
@@ -415,12 +505,11 @@ export default function Dashboard() {
                 <button
                   onClick={startReceiver}
                   disabled={!receiveLink.trim()}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all text-lg hover:-translate-y-0.5"
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all text-lg hover:-translate-y-0.5 flex items-center justify-center gap-2"
                 >
-                  <div className="flex items-center justify-center gap-2">
-                    <Download size={20} /> Start Receiving
-                  </div>
+                  <Download size={20} /> Start Receiving
                 </button>
+                <p className="text-center text-gray-500 text-sm">No login required to receive files</p>
               </div>
             </div>
           </div>

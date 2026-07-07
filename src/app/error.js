@@ -1,6 +1,6 @@
 'use client';
 import { useEffect } from 'react';
-import { RefreshCw, Home } from 'lucide-react';
+import { RefreshCw, Home, AlertTriangle } from 'lucide-react';
 
 import Link from 'next/link';
 
@@ -47,7 +47,7 @@ export default function GlobalError({ error, reset }) {
           margin: '0 auto 1.5rem',
           boxShadow: '0 8px 24px rgba(239,68,68,0.35)'
         }}>
-          <span style={{ fontSize: '2rem' }}>⚠️</span>
+          <AlertTriangle size={32} style={{ color: 'white' }} />
         </div>
 
         <h1 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '1rem' }}>

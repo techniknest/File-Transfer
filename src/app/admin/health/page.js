@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
-import LoadingSkeleton from '../../components/LoadingSkeleton';
 import { showToast } from '../../components/Toast';
+import { RotateCcw, Trash2 } from 'lucide-react';
+import LoadingSkeleton from '../../components/LoadingSkeleton';
 
 export default function AdminHealthPage() {
   const [health, setHealth] = useState(null);
@@ -90,15 +91,15 @@ export default function AdminHealthPage() {
   return (
     <div className="page-enter">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifycontent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.375rem' }}>
             System Health & Monitoring
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Real-time server metrics, database response metrics, active WebRTC room allocations, and system events logs.</p>
         </div>
-        <button onClick={fetchHealth} className="btn btn-secondary btn-sm">
-          ↻ Refresh Metrics
+        <button onClick={fetchHealth} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <RotateCcw size={14} /> Refresh Metrics
         </button>
       </div>
 
@@ -153,19 +154,24 @@ export default function AdminHealthPage() {
         <div className="glass-card" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
             <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>MongoDB Instance</h3>
-            <span className={`badge ${database.status === 'online' ? 'badge-success' : 'badge-danger'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span className={`badge ${database.status === 'online' ? 'badge-success' : database.status === 'mock' ? 'badge-warning' : 'badge-danger'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
               {database.status === 'online' && <span className="status-dot online" style={{ width: 6, height: 6 }} />}
-              {database.status?.toUpperCase() || 'OFFLINE'}
+              {database.status === 'mock' && <span className="status-dot warning" style={{ width: 6, height: 6, background: '#f59e0b' }} />}
+              {database.status === 'mock' ? 'MOCK DB' : (database.status?.toUpperCase() || 'OFFLINE')}
             </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Connection State:</span>
-              <span style={{ fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{database.connectionState || '—'}</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>
+                {database.status === 'mock' ? 'Mock Database Active' : (database.connectionState || '—')}
+              </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Query Response:</span>
-              <span style={{ fontWeight: 600, color: '#10b981' }}>{database.responseTime ? `${database.responseTime} ms` : '—'}</span>
+              <span style={{ fontWeight: 600, color: '#10b981' }}>
+                {database.responseTime ? `${database.responseTime} ms` : (database.status === 'mock' ? '0 ms' : '—')}
+              </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Driver Version:</span>
@@ -228,11 +234,12 @@ export default function AdminHealthPage() {
               <option value="warning">Warning</option>
               <option value="error">Error</option>
             </select>
-            <button onClick={fetchLogs} className="btn btn-secondary btn-sm" disabled={logsLoading}>
-              {logsLoading ? 'Loading...' : '⟳ Refresh'}
+            <button onClick={fetchLogs} className="btn btn-secondary btn-sm" disabled={logsLoading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <RotateCcw size={14} style={{ animation: logsLoading ? 'spin 1s linear infinite' : 'none' }} />
+              {logsLoading ? 'Loading...' : 'Refresh'}
             </button>
-            <button onClick={clearLogs} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}>
-              Clear Log Buffer
+            <button onClick={clearLogs} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Trash2 size={14} /> Clear Buffer
             </button>
           </div>
         </div>

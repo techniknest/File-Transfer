@@ -34,6 +34,9 @@ export default function AdminTransfersPage() {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -54,7 +57,7 @@ export default function AdminTransfersPage() {
   const fetchRecords = async () => {
     setRecordsLoading(true);
     try {
-      const res = await fetch(`/api/transfers?page=${page}&limit=15&status=${statusFilter}`);
+      const res = await fetch(`/api/admin/transfers?page=${page}&limit=15&status=${statusFilter}&search=${encodeURIComponent(searchQuery)}&startDate=${startDate}&endDate=${endDate}`);
       const data = await res.json();
       if (!data.error) {
         setRecords(data.records || []);
@@ -81,7 +84,47 @@ export default function AdminTransfersPage() {
     if (!loading) {
       fetchRecords();
     }
-  }, [page, statusFilter]);
+  }, [page, statusFilter, startDate, endDate]);
+
+  const handleExportCSV = async () => {
+    try {
+      const res = await fetch(`/api/admin/transfers?limit=1000&status=${statusFilter}&search=${encodeURIComponent(searchQuery)}&startDate=${startDate}&endDate=${endDate}`);
+      const data = await res.json();
+      if (data.error) {
+        showToast(data.error, 'error');
+        return;
+      }
+      
+      const headers = ['Room ID', 'Sender Email', 'Receiver Email', 'File Count', 'Total Size (Bytes)', 'Duration (s)', 'Status', 'Date'];
+      const csvRows = [headers.join(',')];
+      
+      data.records.forEach(r => {
+        const values = [
+          `"${r.roomId}"`,
+          `"${r.senderEmail}"`,
+          `"${r.receiverEmail || 'anonymous'}"`,
+          r.fileCount,
+          r.totalSize,
+          r.duration || 0,
+          `"${r.status}"`,
+          `"${new Date(r.createdAt).toLocaleString()}"`
+        ];
+        csvRows.push(values.join(','));
+      });
+      
+      const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `transfers_export_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Transfers exported successfully', 'success');
+    } catch (e) {
+      showToast('Failed to export CSV', 'error');
+    }
+  };
 
   if (loading) {
     return (
@@ -276,27 +319,85 @@ export default function AdminTransfersPage() {
       {/* Records Tab */}
       {activeTab === 'records' && (
         <div className="page-enter">
-          {/* Filter Bar */}
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+          {/* Detailed Filter Bar */}
+          <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flex: 1, minWidth: '280px' }}>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Search by Room ID, Sender, Receiver..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button onClick={fetchRecords} className="btn btn-secondary">Search</button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleExportCSV}
+                  className="btn btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  Export to CSV
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status:</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                  className="input"
+                  style={{ width: '140px', padding: '0.5rem' }}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>From:</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={startDate}
+                  onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+                  style={{ padding: '0.4rem', width: '150px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>To:</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={endDate}
+                  onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+                  style={{ padding: '0.4rem', width: '150px' }}
+                />
+              </div>
+
+              <button
+                onClick={() => { setSearchQuery(''); setStatusFilter(''); setStartDate(''); setEndDate(''); setPage(1); }}
+                className="btn btn-ghost btn-sm"
+                style={{ marginLeft: 'auto' }}
+              >
+                Reset Filters
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
               Showing {records.length} records of {total} total
             </p>
-
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Filter Status:</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                className="input"
-                style={{ width: '150px', padding: '0.5rem' }}
-              >
-                <option value="">All Statuses</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
           </div>
 
           {recordsLoading ? (
@@ -305,39 +406,48 @@ export default function AdminTransfersPage() {
             <EmptyState
               icon={<ClipboardList size={48} className="text-gray-400" />}
               title="No transfers registered"
-              description="Transfers will appear here once users begin sharing files."
+              description="No transfer records match the current filters."
             />
           ) : (
             <div className="glass-card" style={{ overflowX: 'auto', padding: 0 }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Link ID / Sender</th>
-                    <th>Files Count</th>
+                    <th>Room ID</th>
+                    <th>Sender Email</th>
+                    <th>Receiver Email</th>
+                    <th>File Count</th>
                     <th>Total Size</th>
-                    <th>Duration</th>
+                    <th>Date</th>
                     <th>Status</th>
-                    <th>Started At</th>
                     <th style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {records.map((r) => (
                     <tr key={r._id}>
-                      <td>
-                        <p style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)' }}>{r.linkId}</p>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{r.senderName} ({r.senderEmail})</p>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {r.roomId}
                       </td>
-                      <td style={{ color: 'var(--text-primary)' }}>{r.fileCount} file(s)</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{formatBytes(r.totalSize)}</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{formatDuration(r.duration)}</td>
+                      <td style={{ color: 'var(--text-primary)' }}>
+                        {r.senderEmail}
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)' }}>
+                        {r.receiverEmail || 'anonymous'}
+                      </td>
+                      <td style={{ color: 'var(--text-primary)' }}>
+                        {r.fileCount}
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)' }}>
+                        {formatBytes(r.totalSize)}
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                        {new Date(r.createdAt).toLocaleString()}
+                      </td>
                       <td>
                         <span className={`badge ${r.status === 'completed' ? 'badge-success' : r.status === 'failed' ? 'badge-danger' : r.status === 'in_progress' ? 'badge-warning' : 'badge-muted'}`}>
                           {r.status?.replace('_', ' ')}
                         </span>
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                        {new Date(r.createdAt).toLocaleString()}
                       </td>
                       <td>
                         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

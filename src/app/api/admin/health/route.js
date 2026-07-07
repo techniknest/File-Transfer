@@ -18,22 +18,31 @@ export async function GET() {
     let dbStatus = 'offline';
     let dbResponseTime = null;
     const dbStart = Date.now();
-    try {
-      await connectDB();
-      if (mongoose.connection.readyState === 1) {
-        await mongoose.connection.db.command({ ping: 1 });
-        dbStatus = 'online';
-        dbResponseTime = Date.now() - dbStart;
+    if (global.useMockDb) {
+      dbStatus = 'mock';
+      dbResponseTime = 0;
+    } else {
+      try {
+        await connectDB();
+        if (mongoose.connection.readyState === 1) {
+          await mongoose.connection.db.command({ ping: 1 });
+          dbStatus = 'online';
+          dbResponseTime = Date.now() - dbStart;
+        }
+      } catch (e) {
+        dbStatus = 'error';
       }
-    } catch (e) {
-      dbStatus = 'error';
     }
 
     // Active sessions from socket handler
     const rooms = global._p2pRooms?.() || {};
     const sessionMeta = global._p2pSessions?.() || {};
     const activeSessions = Object.keys(rooms).length;
-    const activeConnections = global._p2pIO?.engine?.clientsCount || 0;
+    
+    // Active connections: global.activeConnections = { count }
+    const activeConnections = (global.activeConnections && typeof global.activeConnections.count === 'number')
+      ? global.activeConnections.count
+      : (global._p2pIO?.engine?.clientsCount || 0);
 
     // Session statuses
     const sessionsByStatus = Object.values(sessionMeta).reduce((acc, s) => {
@@ -56,9 +65,12 @@ export async function GET() {
       },
       database: {
         status: dbStatus,
+        useMockDb: !!global.useMockDb,
         responseTime: dbResponseTime,
         mongoVersion: mongoose.version,
-        connectionState: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown',
+        connectionState: global.useMockDb 
+          ? 'Mock Database Active' 
+          : (['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown'),
       },
       transfers: {
         activeSessions,

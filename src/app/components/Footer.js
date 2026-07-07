@@ -32,7 +32,7 @@ export default function Footer() {
             <div>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '1rem' }}>Product</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {['/how-it-works', '/faq', '/about'].map(href => (
+                {['/how-it-works', '/faq', '/about', '/services'].map(href => (
                   <Link key={href} href={href} style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', textDecoration: 'none', transition: 'color 0.2s' }}>
                     {href.slice(1).replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                   </Link>

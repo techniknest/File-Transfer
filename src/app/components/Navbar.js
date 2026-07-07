@@ -9,6 +9,7 @@ import { Zap, Moon, Sun, Menu, X } from 'lucide-react';
 const NAV_LINKS = [
   { href: '/about', label: 'About' },
   { href: '/how-it-works', label: 'How it Works' },
+  { href: '/services', label: 'Services' },
   { href: '/faq', label: 'FAQ' },
 ];
 

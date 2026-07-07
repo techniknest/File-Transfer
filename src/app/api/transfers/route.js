@@ -46,7 +46,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await connectDB();
-    const { roomId, senderEmail, files, totalSize } = await request.json();
+    const { roomId, senderEmail, receiverEmail, files, totalSize } = await request.json();
 
     if (!roomId || !senderEmail) {
       return NextResponse.json({ error: 'roomId and senderEmail are required' }, { status: 400 });
@@ -55,6 +55,7 @@ export async function POST(request) {
     const record = await TransferRecord.create({
       roomId,
       senderEmail: senderEmail || 'anonymous',
+      receiverEmail: receiverEmail || 'anonymous',
       files: files || [],
       totalSize: totalSize || 0,
       status: 'completed',

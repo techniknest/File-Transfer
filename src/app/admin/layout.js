@@ -3,13 +3,13 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTheme } from '../components/ThemeProvider';
-import { BarChart3, Users, Package, Heart, Shield, Moon, Sun, ArrowLeft, Menu } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Activity, Shield, Moon, Sun, ArrowLeft, Menu } from 'lucide-react';
 
 const ADMIN_NAV = [
-  { href: '/admin', label: 'Overview', icon: <BarChart3 size={20} /> },
+  { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
   { href: '/admin/users', label: 'Users', icon: <Users size={20} /> },
-  { href: '/admin/transfers', label: 'Transfers', icon: <Package size={20} /> },
-  { href: '/admin/health', label: 'System Health', icon: <Heart size={20} /> },
+  { href: '/admin/transfers', label: 'Transfers', icon: <FileText size={20} /> },
+  { href: '/admin/health', label: 'Health', icon: <Activity size={20} /> },
 ];
 
 export default function AdminLayout({ children }) {
@@ -77,7 +77,7 @@ export default function AdminLayout({ children }) {
             <div className="divider" style={{ margin: '0.75rem 0' }} />
             <a href="/dashboard" className="sidebar-nav-item">
               <span style={{ display: 'flex', alignItems: 'center', marginRight: '0.5rem' }}><ArrowLeft size={18} /></span>
-              Back to Dashboard
+              Back to App
             </a>
           </nav>
         </div>
@@ -112,8 +112,10 @@ export default function AdminLayout({ children }) {
             <button onClick={() => setSidebarOpen(true)} className="btn btn-ghost btn-icon" style={{ display: 'none' }}><Menu size={20} /></button>
             <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Shield size={14} /> Admin Mode</span>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <a href="/dashboard" className="btn btn-ghost btn-sm">← Dashboard</a>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <a href="/dashboard" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <ArrowLeft size={14} /> Back to App
+            </a>
             <button onClick={() => signOut({ callbackUrl: '/login' })} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}>Sign Out</button>
           </div>
         </header>

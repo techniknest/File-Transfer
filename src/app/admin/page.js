@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Users, CheckCircle, Ban, UserPlus, Package, XCircle, Loader, BarChart3, HardDrive, Link as LinkIcon, Heart } from 'lucide-react';
+import { AlertTriangle, Users, CheckCircle, Ban, UserPlus, Package, XCircle, Loader, BarChart3, HardDrive, Link as LinkIcon, Heart, RotateCcw } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -79,8 +79,9 @@ export default function AdminOverviewPage() {
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Real-time system statistics • Auto-refreshes every 30s</p>
         </div>
-        <button onClick={fetchStats} className="btn btn-secondary btn-sm" disabled={loading}>
-          {loading ? '⟳ Refreshing...' : '↻ Refresh'}
+        <button onClick={fetchStats} className="btn btn-secondary btn-sm" disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <RotateCcw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          {loading ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 

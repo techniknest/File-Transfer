@@ -20,6 +20,7 @@ export default function AdminUsersPage() {
   const [pages, setPages] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userHistory, setUserHistory] = useState([]);
@@ -28,7 +29,7 @@ export default function AdminUsersPage() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/users?page=${page}&search=${encodeURIComponent(search)}&status=${statusFilter}`);
+      const res = await fetch(`/api/admin/users?page=${page}&search=${encodeURIComponent(search)}&status=${statusFilter}&role=${roleFilter}`);
       const data = await res.json();
       if (data.error) {
         showToast(data.error, 'error');
@@ -46,7 +47,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     fetchUsers();
-  }, [page, statusFilter]);
+  }, [page, statusFilter, roleFilter]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -140,17 +141,33 @@ export default function AdminUsersPage() {
         </form>
 
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status:</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            className="input"
-            style={{ width: '140px', padding: '0.5rem' }}
-          >
-            <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-          </select>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Role:</label>
+            <select
+              value={roleFilter}
+              onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
+              className="input"
+              style={{ width: '120px', padding: '0.5rem' }}
+            >
+              <option value="">All Roles</option>
+              <option value="admin">Admin</option>
+              <option value="user">User</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status:</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              className="input"
+              style={{ width: '140px', padding: '0.5rem' }}
+            >
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -163,7 +180,7 @@ export default function AdminUsersPage() {
           title="No users found"
           description="Try adjusting your search criteria or filters."
           actionText="Reset Filters"
-          onAction={() => { setSearch(''); setStatusFilter(''); setPage(1); fetchUsers(); }}
+          onAction={() => { setSearch(''); setStatusFilter(''); setRoleFilter(''); setPage(1); fetchUsers(); }}
         />
       ) : (
         <div className="glass-card" style={{ overflowX: 'auto', padding: 0 }}>

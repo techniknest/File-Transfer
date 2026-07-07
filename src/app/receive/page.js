@@ -99,6 +99,7 @@ export default function ReceivePage() {
   const [status, setStatus] = useState('idle');  // idle | connecting | waiting | receiving | done | invalid | expired | full | error
   const [roomId, setRoomId] = useState('');
   const [manualLink, setManualLink] = useState('');
+  const [prefilledRoomId, setPrefilledRoomId] = useState('');
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [toasts, setToasts] = useState([]);
 
@@ -367,6 +368,7 @@ export default function ReceivePage() {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
+      setPrefilledRoomId(roomParam.toUpperCase());
       setManualLink(window.location.origin + '/receive?room=' + roomParam);
     }
 
@@ -456,41 +458,95 @@ export default function ReceivePage() {
             {/* ──────────── IDLE state ──────────── */}
             {status === 'idle' && (
               <div>
-                <p style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginBottom: '1.5rem' }}>
-                  Paste a transfer link or room code below to start receiving files.
-                </p>
-                <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                  <input
-                    type="text"
-                    placeholder="https://…/receive?room=XXXX or room code"
-                    value={manualLink}
-                    onChange={(e) => setManualLink(e.target.value)}
-                    required
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      background: 'rgba(255,255,255,0.07)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      borderRadius: '0.875rem', padding: '0.875rem 1.125rem',
-                      color: 'white', fontSize: '0.9rem',
-                      outline: 'none', transition: 'border 0.2s',
-                    }}
-                    onFocus={e => e.target.style.borderColor = 'rgba(16,185,129,0.6)'}
-                    onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.15)'}
-                  />
-                  <button type="submit" style={{
-                    width: '100%', padding: '0.9rem',
-                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                    border: 'none', borderRadius: '0.875rem',
-                    color: 'white', fontSize: '0.95rem', fontWeight: 700,
-                    cursor: 'pointer', transition: 'all 0.2s',
-                    boxShadow: '0 4px 20px rgba(16,185,129,0.35)',
-                  }}
-                    onMouseEnter={e => e.target.style.transform = 'translateY(-1px)'}
-                    onMouseLeave={e => e.target.style.transform = 'none'}
-                  >
-                    <div className="flex items-center justify-center gap-2"><Download size={20} /> Start Receiving</div>
-                  </button>
-                </form>
+                {prefilledRoomId ? (
+                  <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '1rem',
+                      padding: '1.25rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem'
+                    }}>
+                      <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Ready to Connect
+                      </span>
+                      <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981', fontFamily: 'monospace' }}>
+                        {prefilledRoomId}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => connect(prefilledRoomId)}
+                      style={{
+                        width: '100%', padding: '1.1rem',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        border: 'none', borderRadius: '0.875rem',
+                        color: 'white', fontSize: '1.1rem', fontWeight: 800,
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        boxShadow: '0 8px 32px rgba(16,185,129,0.3)',
+                      }}
+                      onMouseEnter={e => e.target.style.transform = 'translateY(-1px)'}
+                      onMouseLeave={e => e.target.style.transform = 'none'}
+                    >
+                      <div className="flex items-center justify-center gap-2"><Download size={22} /> Start Receiving</div>
+                    </button>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#10b981', fontWeight: 600 }}>
+                        No login required
+                      </span>
+                      <button
+                        onClick={() => { setPrefilledRoomId(''); setManualLink(''); }}
+                        style={{
+                          background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
+                          fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline'
+                        }}
+                      >
+                        Enter different room code
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginBottom: '1.5rem' }}>
+                      Paste a transfer link or room code below to start receiving files.
+                    </p>
+                    <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                      <input
+                        type="text"
+                        placeholder="https://…/receive?room=XXXX or room code"
+                        value={manualLink}
+                        onChange={(e) => setManualLink(e.target.value)}
+                        required
+                        style={{
+                          width: '100%', boxSizing: 'border-box',
+                          background: 'rgba(255,255,255,0.07)',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          borderRadius: '0.875rem', padding: '0.875rem 1.125rem',
+                          color: 'white', fontSize: '0.9rem',
+                          outline: 'none', transition: 'border 0.2s',
+                        }}
+                        onFocus={e => e.target.style.borderColor = 'rgba(16,185,129,0.6)'}
+                        onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.15)'}
+                      />
+                      <button type="submit" style={{
+                        width: '100%', padding: '0.9rem',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        border: 'none', borderRadius: '0.875rem',
+                        color: 'white', fontSize: '0.95rem', fontWeight: 700,
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        boxShadow: '0 4px 20px rgba(16,185,129,0.35)',
+                      }}
+                        onMouseEnter={e => e.target.style.transform = 'translateY(-1px)'}
+                        onMouseLeave={e => e.target.style.transform = 'none'}
+                      >
+                        <div className="flex items-center justify-center gap-2"><Download size={20} /> Start Receiving</div>
+                      </button>
+                    </form>
+                  </div>
+                )}
               </div>
             )}
 

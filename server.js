@@ -107,9 +107,20 @@ app.prepare().then(() => {
 
   global.io = io;
   global.activeConnections = activeConnections;
+  global._p2pIO = io;
+  global._p2pRooms = () => rooms;
+  global._p2pSessions = () => {
+    const sessionMeta = {};
+    for (const [roomId, room] of Object.entries(rooms)) {
+      sessionMeta[roomId] = {
+        status: room.receiver ? 'transferring' : 'waiting'
+      };
+    }
+    return sessionMeta;
+  };
 
   const PORT = process.env.PORT || 3000;
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n✅ Server ready on port ${PORT} (all interfaces)\n`);
+    console.log(`\n[OK] Server ready on port ${PORT} (all interfaces)\n`);
   });
 });

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { Mail, Building, Clock } from 'lucide-react';
+import { Mail, Building, Clock, Settings } from 'lucide-react';
 
 import { useToast } from '../components/Toast';
 
@@ -145,7 +145,7 @@ export default function ContactPage() {
                 >
                   {isSubmitting ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⚙️</span> Sending...
+                      <span style={{ display: 'inline-block' }}><Settings size={16} style={{ animation: 'spin 1s linear infinite' }} /></span> Sending...
                     </span>
                   ) : 'Send Message'}
                 </button>

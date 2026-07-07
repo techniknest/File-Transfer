@@ -21,6 +21,7 @@ export async function GET(request) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
+    const role = searchParams.get('role') || '';
     const skip = (page - 1) * limit;
 
     const filter = {};
@@ -31,6 +32,7 @@ export async function GET(request) {
       ];
     }
     if (status) filter.status = status;
+    if (role) filter.role = role;
 
     const [users, total] = await Promise.all([
       User.find(filter, { password: 0 }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
