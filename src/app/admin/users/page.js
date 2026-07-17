@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import EmptyState from '../../components/EmptyState';
 import { showToast } from '../../components/Toast';
-import { Users, X } from 'lucide-react';
+import { Users, X, Shield, ShieldOff, Ban, CheckCircle, Trash2, Eye } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -11,6 +11,11 @@ function formatBytes(bytes) {
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(2)} MB`;
   return `${(bytes / 1073741824).toFixed(2)} GB`;
+}
+
+function formatDate(date) {
+  if (!date) return 'Never';
+  return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export default function AdminUsersPage() {
@@ -22,6 +27,7 @@ export default function AdminUsersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
   const [userHistory, setUserHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -29,7 +35,9 @@ export default function AdminUsersPage() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/users?page=${page}&search=${encodeURIComponent(search)}&status=${statusFilter}&role=${roleFilter}`);
+      const res = await fetch(
+        `/api/admin/users?page=${page}&search=${encodeURIComponent(search)}&status=${statusFilter}&role=${roleFilter}`
+      );
       const data = await res.json();
       if (data.error) {
         showToast(data.error, 'error');
@@ -38,16 +46,14 @@ export default function AdminUsersPage() {
         setTotal(data.total || 0);
         setPages(data.pages || 1);
       }
-    } catch (err) {
+    } catch {
       showToast('Failed to load users', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, [page, statusFilter, roleFilter]);
+  useEffect(() => { fetchUsers(); }, [page, statusFilter, roleFilter]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -55,35 +61,34 @@ export default function AdminUsersPage() {
     fetchUsers();
   };
 
-  const toggleUserStatus = async (user) => {
-    const action = user.status === 'suspended' ? 'activate' : 'suspend';
+  const performAction = async (userId, action) => {
+    setActionLoading(prev => ({ ...prev, [`${userId}-${action}`]: true }));
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await fetch(`/api/admin/users/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user._id, action }),
+        body: JSON.stringify({ action }),
       });
       const data = await res.json();
       if (data.error) {
         showToast(data.error, 'error');
       } else {
-        showToast(`User status updated to ${data.user.status}`, 'success');
-        setUsers(users.map(u => u._id === user._id ? data.user : u));
-        if (selectedUser?._id === user._id) {
-          setSelectedUser(data.user);
-        }
+        showToast(data.message || 'User updated', 'success');
+        setUsers(prev => prev.map(u => u._id === userId ? data.user : u));
+        if (selectedUser?._id === userId) setSelectedUser(data.user);
       }
-    } catch (err) {
-      showToast('Failed to update user status', 'error');
+    } catch {
+      showToast('Action failed', 'error');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`${userId}-${action}`]: false }));
     }
   };
 
   const deleteUser = async (userId) => {
-    if (!confirm('Are you sure you want to permanently delete this user? This action cannot be undone.')) return;
+    if (!confirm('Permanently delete this user? This cannot be undone.')) return;
+    setActionLoading(prev => ({ ...prev, [`${userId}-delete`]: true }));
     try {
-      const res = await fetch(`/api/admin/users?userId=${userId}`, {
-        method: 'DELETE',
-      });
+      const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.error) {
         showToast(data.error, 'error');
@@ -92,8 +97,10 @@ export default function AdminUsersPage() {
         setSelectedUser(null);
         fetchUsers();
       }
-    } catch (err) {
+    } catch {
       showToast('Failed to delete user', 'error');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`${userId}-delete`]: false }));
     }
   };
 
@@ -101,17 +108,15 @@ export default function AdminUsersPage() {
     setSelectedUser(user);
     setHistoryLoading(true);
     try {
-      const res = await fetch(`/api/transfers?limit=50`); // Note: API filters by user's email if not admin, but for admin query, we will fetch user-specific or list all.
-      // Wait, let's see how our transfers API filters. Our /api/transfers route:
-      // const filter = session.user.role === 'admin' ? {} : { senderEmail: session.user.email };
-      // Ah! If the requester is admin, it returns all transfers. Let's filter client-side or we can add senderEmail query param to /api/transfers!
-      const histRes = await fetch(`/api/transfers?limit=100`);
-      const histData = await histRes.json();
-      if (histData.records) {
-        const filtered = histData.records.filter(r => r.senderEmail.toLowerCase() === user.email.toLowerCase());
+      const res = await fetch(`/api/transfers?limit=100`);
+      const data = await res.json();
+      if (data.records) {
+        const filtered = data.records.filter(
+          r => r.senderEmail?.toLowerCase() === user.email.toLowerCase()
+        );
         setUserHistory(filtered);
       }
-    } catch (err) {
+    } catch {
       showToast('Failed to load transfer history', 'error');
     } finally {
       setHistoryLoading(false);
@@ -124,12 +129,14 @@ export default function AdminUsersPage() {
         <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.375rem' }}>
           User Management
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>View profile information, suspend, reactivate, or delete user accounts.</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+          Manage user accounts — block/unblock, change roles, or delete accounts. {total > 0 && <strong style={{ color: 'var(--text-primary)' }}>{total} users total</strong>}
+        </p>
       </div>
 
-      {/* Filters & Actions */}
+      {/* Filters */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem', flex: 1, maxWidth: '400px' }}>
+        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem', flex: 1, maxWidth: '420px' }}>
           <input
             type="text"
             className="input"
@@ -140,43 +147,37 @@ export default function AdminUsersPage() {
           <button type="submit" className="btn btn-secondary">Search</button>
         </form>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Role:</label>
-            <select
-              value={roleFilter}
-              onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-              className="input"
-              style={{ width: '120px', padding: '0.5rem' }}
-            >
-              <option value="">All Roles</option>
-              <option value="admin">Admin</option>
-              <option value="user">User</option>
-            </select>
-          </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <select
+            value={roleFilter}
+            onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
+            className="input"
+            style={{ width: '130px', padding: '0.5rem' }}
+          >
+            <option value="">All Roles</option>
+            <option value="admin">Admin</option>
+            <option value="user">User</option>
+          </select>
 
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status:</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              className="input"
-              style={{ width: '140px', padding: '0.5rem' }}
-            >
-              <option value="">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="suspended">Suspended</option>
-            </select>
-          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            className="input"
+            style={{ width: '150px', padding: '0.5rem' }}
+          >
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="suspended">Blocked</option>
+          </select>
         </div>
       </div>
 
-      {/* Main Table */}
+      {/* Table */}
       {loading ? (
         <LoadingSkeleton type="table" count={5} />
       ) : users.length === 0 ? (
         <EmptyState
-          icon={<Users size={48} className="text-gray-400" />}
+          icon={<Users size={48} />}
           title="No users found"
           description="Try adjusting your search criteria or filters."
           actionText="Reset Filters"
@@ -187,65 +188,104 @@ export default function AdminUsersPage() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>User Details</th>
+                <th>User</th>
                 <th>Role</th>
                 <th>Status</th>
-                <th>Logins</th>
+                <th>Joined</th>
                 <th>Last Login</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
-                <tr key={user._id}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <div className="gradient-brand" style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700 }}>
-                        {user.name?.[0]?.toUpperCase() || 'U'}
+              {users.map((user) => {
+                const isBlocked = user.status === 'suspended';
+                const isAdmin = user.role === 'admin';
+                return (
+                  <tr key={user._id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div className="gradient-brand" style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, flexShrink: 0 }}>
+                          {user.name?.[0]?.toUpperCase() || 'U'}
+                        </div>
+                        <div>
+                          <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.name}</p>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{user.email}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.name}</p>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{user.email}</p>
+                    </td>
+                    <td>
+                      <span className={`badge ${isAdmin ? 'badge-warning' : 'badge-primary'}`}>
+                        {user.role}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${isBlocked ? 'badge-danger' : 'badge-success'}`}>
+                        {isBlocked ? 'Blocked' : 'Active'}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                      {formatDate(user.createdAt)}
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                      {user.lastLoginAt ? formatDate(user.lastLoginAt) : 'Never'}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {/* View Profile */}
+                        <button
+                          onClick={() => viewHistory(user)}
+                          className="btn btn-secondary btn-sm"
+                          title="View Profile"
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          <Eye size={13} /> Profile
+                        </button>
+
+                        {/* Block / Unblock */}
+                        <button
+                          onClick={() => performAction(user._id, isBlocked ? 'unblock' : 'block')}
+                          disabled={!!actionLoading[`${user._id}-${isBlocked ? 'unblock' : 'block'}`]}
+                          className={`btn btn-sm ${isBlocked ? 'btn-success' : 'btn-ghost'}`}
+                          style={!isBlocked ? { color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.3)' } : undefined}
+                          title={isBlocked ? 'Unblock user' : 'Block user'}
+                        >
+                          {isBlocked ? <><CheckCircle size={13} /> Unblock</> : <><Ban size={13} /> Block</>}
+                        </button>
+
+                        {/* Make Admin / Remove Admin */}
+                        <button
+                          onClick={() => performAction(user._id, isAdmin ? 'remove-admin' : 'make-admin')}
+                          disabled={!!actionLoading[`${user._id}-${isAdmin ? 'remove-admin' : 'make-admin'}`]}
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: isAdmin ? 'var(--danger)' : '#fbbf24', borderColor: isAdmin ? 'rgba(239,68,68,0.3)' : 'rgba(251,191,36,0.3)' }}
+                          title={isAdmin ? 'Remove admin role' : 'Promote to admin'}
+                        >
+                          {isAdmin ? <><ShieldOff size={13} /> Demote</> : <><Shield size={13} /> Make Admin</>}
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          onClick={() => deleteUser(user._id)}
+                          disabled={!!actionLoading[`${user._id}-delete`]}
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: 'var(--danger)' }}
+                          title="Delete user"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`badge ${user.role === 'admin' ? 'badge-warning' : 'badge-primary'}`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge ${user.status === 'suspended' ? 'badge-danger' : 'badge-success'}`}>
-                      {user.status || 'active'}
-                    </span>
-                  </td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{user.loginCount || 0}</td>
-                  <td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                    {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                      <button onClick={() => viewHistory(user)} className="btn btn-secondary btn-sm">Profile & History</button>
-                      <button
-                        onClick={() => toggleUserStatus(user)}
-                        className={`btn btn-sm ${user.status === 'suspended' ? 'btn-success' : 'btn-ghost'}`}
-                        style={user.status !== 'suspended' ? { color: 'var(--warning)' } : undefined}
-                      >
-                        {user.status === 'suspended' ? 'Reactivate' : 'Suspend'}
-                      </button>
-                      <button onClick={() => deleteUser(user._id)} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}>Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
           {/* Pagination */}
           {pages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--border-default)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', borderTop: '1px solid var(--border-default)' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Page {page} of {pages} ({total} users total)
+                Page {page} of {pages} ({total} total)
               </span>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button disabled={page === 1} onClick={() => setPage(page - 1)} className="btn btn-secondary btn-sm">Previous</button>
@@ -256,54 +296,56 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* User details & history modal */}
+      {/* User Profile Modal */}
       {selectedUser && (
         <div className="modal-overlay">
           <div className="modal-box glass-card" style={{ width: '100%', maxWidth: '700px', padding: '2rem' }}>
-            <div style={{ display: 'flex', justify: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-default)', paddingBottom: '1rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-primary)' }}>User Profile Details</h2>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{selectedUser.name}</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-default)', paddingBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="gradient-brand" style={{ width: '48px', height: '48px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '1.25rem', flexShrink: 0 }}>
+                  {selectedUser.name?.[0]?.toUpperCase()}
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>{selectedUser.name}</h2>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{selectedUser.email}</p>
+                </div>
               </div>
-              <button onClick={() => setSelectedUser(null)} className="btn btn-ghost btn-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
+              <button onClick={() => setSelectedUser(null)} className="btn btn-ghost btn-icon">
+                <X size={20} />
+              </button>
             </div>
 
             {/* Profile Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-              <div style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-default)', padding: '0.75rem 1rem', borderRadius: '0.75rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Email Address</span>
-                <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{selectedUser.email}</p>
-              </div>
-              <div style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-default)', padding: '0.75rem 1rem', borderRadius: '0.75rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Account Role</span>
-                <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{selectedUser.role}</p>
-              </div>
-              <div style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-default)', padding: '0.75rem 1rem', borderRadius: '0.75rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Account Status</span>
-                <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{selectedUser.status}</p>
-              </div>
-              <div style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-default)', padding: '0.75rem 1rem', borderRadius: '0.75rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Created Date</span>
-                <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{new Date(selectedUser.createdAt).toLocaleDateString()}</p>
-              </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              {[
+                { label: 'Role', value: selectedUser.role },
+                { label: 'Status', value: selectedUser.status === 'suspended' ? 'Blocked' : 'Active' },
+                { label: 'Logins', value: selectedUser.loginCount || 0 },
+                { label: 'Joined', value: formatDate(selectedUser.createdAt) },
+                { label: 'Last Login', value: formatDate(selectedUser.lastLoginAt) },
+                { label: 'Blocked At', value: selectedUser.blockedAt ? formatDate(selectedUser.blockedAt) : '—' },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-default)', padding: '0.75rem 1rem', borderRadius: '0.75rem' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+                  <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', marginTop: '0.2rem' }}>{value}</p>
+                </div>
+              ))}
             </div>
 
             {/* Transfer History */}
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>User Transfer History</h3>
-            
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>Transfer History</h3>
             {historyLoading ? (
               <LoadingSkeleton type="list" count={3} />
             ) : userHistory.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center', padding: '2rem' }}>
-                No file transfer records found for this user.
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem', background: 'var(--bg-glass)', borderRadius: '0.75rem' }}>
+                No transfer records found for this user.
               </p>
             ) : (
-              <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--border-default)', borderRadius: '0.75rem' }}>
+              <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid var(--border-default)', borderRadius: '0.75rem' }}>
                 <table className="data-table" style={{ fontSize: '0.8rem' }}>
                   <thead>
                     <tr>
-                      <th>Link ID</th>
-                      <th>Files</th>
+                      <th>Room ID</th>
                       <th>Total Size</th>
                       <th>Status</th>
                       <th>Date</th>
@@ -312,15 +354,14 @@ export default function AdminUsersPage() {
                   <tbody>
                     {userHistory.map(record => (
                       <tr key={record._id}>
-                        <td><span style={{ fontFamily: 'monospace' }}>{record.linkId}</span></td>
-                        <td>{record.fileCount}</td>
+                        <td><span style={{ fontFamily: 'monospace' }}>{record.roomId}</span></td>
                         <td>{formatBytes(record.totalSize)}</td>
                         <td>
                           <span className={`badge ${record.status === 'completed' ? 'badge-success' : 'badge-danger'}`}>
                             {record.status}
                           </span>
                         </td>
-                        <td>{new Date(record.createdAt).toLocaleDateString()}</td>
+                        <td>{formatDate(record.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -328,18 +369,23 @@ export default function AdminUsersPage() {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem', flexWrap: 'wrap' }}>
               <button
-                onClick={() => { toggleUserStatus(selectedUser); }}
-                className="btn btn-secondary"
+                onClick={() => performAction(selectedUser._id, selectedUser.status === 'suspended' ? 'unblock' : 'block')}
+                className={`btn ${selectedUser.status === 'suspended' ? 'btn-success' : 'btn-secondary'}`}
+                style={selectedUser.status !== 'suspended' ? { color: 'var(--warning)' } : undefined}
               >
-                {selectedUser.status === 'suspended' ? 'Reactivate' : 'Suspend Account'}
+                {selectedUser.status === 'suspended' ? 'Unblock Account' : 'Block Account'}
               </button>
               <button
-                onClick={() => { deleteUser(selectedUser._id); }}
-                className="btn btn-danger"
+                onClick={() => performAction(selectedUser._id, selectedUser.role === 'admin' ? 'remove-admin' : 'make-admin')}
+                className="btn btn-secondary"
+                style={{ color: selectedUser.role === 'admin' ? 'var(--danger)' : '#fbbf24' }}
               >
-                Delete Account
+                {selectedUser.role === 'admin' ? 'Remove Admin Role' : 'Make Admin'}
+              </button>
+              <button onClick={() => deleteUser(selectedUser._id)} className="btn btn-danger">
+                <Trash2 size={16} /> Delete
               </button>
               <button onClick={() => setSelectedUser(null)} className="btn btn-secondary">Close</button>
             </div>

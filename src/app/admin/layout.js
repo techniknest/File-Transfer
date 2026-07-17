@@ -3,13 +3,18 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTheme } from '../components/ThemeProvider';
-import { LayoutDashboard, Users, FileText, Activity, Shield, Moon, Sun, ArrowLeft, Menu } from 'lucide-react';
+import {
+  LayoutDashboard, Users, FileText, Activity, Shield,
+  Moon, Sun, ArrowLeft, Menu, Star, Settings
+} from 'lucide-react';
 
 const ADMIN_NAV = [
-  { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+  { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={20} />, exact: true },
   { href: '/admin/users', label: 'Users', icon: <Users size={20} /> },
   { href: '/admin/transfers', label: 'Transfers', icon: <FileText size={20} /> },
-  { href: '/admin/health', label: 'Health', icon: <Activity size={20} /> },
+  { href: '/admin/reviews', label: 'Reviews', icon: <Star size={20} /> },
+  { href: '/admin/health', label: 'System Health', icon: <Activity size={20} /> },
+  { href: '/admin/settings', label: 'Settings', icon: <Settings size={20} /> },
 ];
 
 export default function AdminLayout({ children }) {
@@ -38,14 +43,24 @@ export default function AdminLayout({ children }) {
     );
   }
 
+  const isActive = (item) => {
+    if (item.exact) return pathname === item.href;
+    return pathname === item.href || pathname.startsWith(item.href + '/');
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex' }}>
-      {/* Sidebar overlay mobile */}
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99 }} />}
+      {/* Sidebar overlay — mobile only */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99 }}
+        />
+      )}
 
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`} style={{ zIndex: 100 }}>
-        <div style={{ padding: '1.5rem 1rem' }}>
+        <div style={{ padding: '1.5rem 1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.5rem', padding: '0 0.25rem' }}>
             <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -60,30 +75,37 @@ export default function AdminLayout({ children }) {
           <div className="divider" style={{ marginBottom: '1.25rem', marginTop: '1rem' }} />
 
           {/* Nav */}
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-            {ADMIN_NAV.map(item => (
-              <a
-                key={item.href}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={`sidebar-nav-item ${pathname === item.href ? 'active' : ''}`}
-                style={{ color: pathname === item.href ? '#f59e0b' : undefined, background: pathname === item.href ? 'rgba(245,158,11,0.1)' : undefined, borderColor: pathname === item.href ? 'rgba(245,158,11,0.2)' : undefined }}
-              >
-                <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
-                {item.label}
-              </a>
-            ))}
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem', flex: 1 }}>
+            {ADMIN_NAV.map(item => {
+              const active = isActive(item);
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className="sidebar-nav-item"
+                  style={{
+                    color: active ? '#f59e0b' : undefined,
+                    background: active ? 'rgba(245,158,11,0.1)' : undefined,
+                    borderColor: active ? 'rgba(245,158,11,0.2)' : undefined,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center' }}>{item.icon}</span>
+                  {item.label}
+                </a>
+              );
+            })}
 
             <div className="divider" style={{ margin: '0.75rem 0' }} />
-            <a href="/dashboard" className="sidebar-nav-item">
-              <span style={{ display: 'flex', alignItems: 'center', marginRight: '0.5rem' }}><ArrowLeft size={18} /></span>
+            <a href="/dashboard" className="sidebar-nav-item" onClick={() => setSidebarOpen(false)}>
+              <span style={{ display: 'flex', alignItems: 'center' }}><ArrowLeft size={18} /></span>
               Back to App
             </a>
           </nav>
         </div>
 
-        {/* User */}
-        <div style={{ marginTop: 'auto', padding: '1rem', borderTop: '1px solid var(--border-default)' }}>
+        {/* User section */}
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--border-default)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', padding: '0.75rem', borderRadius: '0.75rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
             <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, flexShrink: 0 }}>
               {session.user.name?.[0]?.toUpperCase()}
@@ -104,19 +126,32 @@ export default function AdminLayout({ children }) {
         </div>
       </aside>
 
-      {/* Main */}
+      {/* Main content */}
       <main style={{ flex: 1, marginLeft: '256px', minHeight: '100vh', display: 'flex', flexDirection: 'column' }} className="main-with-sidebar">
         {/* Header */}
         <header className="glass" style={{ borderBottom: '1px solid var(--border-default)', padding: '0 1.5rem', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <button onClick={() => setSidebarOpen(true)} className="btn btn-ghost btn-icon" style={{ display: 'none' }}><Menu size={20} /></button>
-            <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Shield size={14} /> Admin Mode</span>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="btn btn-ghost btn-icon mobile-menu-btn"
+              aria-label="Open sidebar"
+            >
+              <Menu size={20} />
+            </button>
+            <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <Shield size={14} /> Admin Mode
+            </span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <a href="/admin/settings" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Settings size={14} /> Settings
+            </a>
             <a href="/dashboard" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
               <ArrowLeft size={14} /> Back to App
             </a>
-            <button onClick={() => signOut({ callbackUrl: '/login' })} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}>Sign Out</button>
+            <button onClick={() => signOut({ callbackUrl: '/login' })} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}>
+              Sign Out
+            </button>
           </div>
         </header>
 
@@ -127,9 +162,10 @@ export default function AdminLayout({ children }) {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        .mobile-menu-btn { display: none; }
         @media (max-width: 768px) {
           main { margin-left: 0 !important; }
-          header button { display: flex !important; }
+          .mobile-menu-btn { display: flex !important; }
         }
       `}</style>
     </div>

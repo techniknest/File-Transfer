@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import TransferRecord from '@/models/TransferRecord';
+import ErrorLog from '@/models/ErrorLog';
 
 export async function GET() {
   try {
@@ -25,6 +26,8 @@ export async function GET() {
       failedTransfers,
       inProgressTransfers,
       totalDataAgg,
+      transfersByDayAgg,
+      recentErrors,
     ] = await Promise.all([
       User.countDocuments({}),
       User.countDocuments({ status: 'active' }),
@@ -34,10 +37,41 @@ export async function GET() {
       TransferRecord.countDocuments({ status: 'completed' }),
       TransferRecord.countDocuments({ status: 'failed' }),
       TransferRecord.countDocuments({ status: 'in_progress' }),
-      TransferRecord.aggregate([{ $group: { _id: null, totalBytes: { $sum: '$totalSize' } } }]),
+      TransferRecord.aggregate([
+        { $group: { _id: null, totalBytes: { $sum: '$totalSize' } } }
+      ]),
+      // Group transfers by day for the last 7 days
+      TransferRecord.aggregate([
+        { $match: { createdAt: { $gte: sevenDaysAgo } } },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
+            },
+            count: { $sum: 1 },
+            bytes: { $sum: '$totalSize' },
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
+      ErrorLog.find({}).sort({ timestamp: -1 }).limit(10).lean(),
     ]);
 
-    // Active sockets (from global state set by socket handler)
+    // Build last 7 days chart data (fill in missing days with 0)
+    const chartData = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      const found = transfersByDayAgg.find(x => x._id === key);
+      chartData.push({
+        date: key,
+        day: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        transfers: found?.count || 0,
+        bytes: found?.bytes || 0,
+      });
+    }
+
+    // Active sockets from global state
     const rooms = global._p2pRooms?.() || {};
     const activeSessions = Object.keys(rooms).length;
 
@@ -47,6 +81,8 @@ export async function GET() {
     return NextResponse.json({
       users: { totalUsers, activeUsers, suspendedUsers, newUsersThisWeek },
       transfers: { totalTransfers, successTransfers, failedTransfers, inProgressTransfers, successRate, totalBytes, activeSessions },
+      chartData,
+      recentErrors,
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

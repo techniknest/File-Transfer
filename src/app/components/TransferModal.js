@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { Upload, X, File, Link as LinkIcon, Check, Copy, Zap, Timer, AlertTriangle, Plus } from 'lucide-react';
-
+import { Upload, X, File, Link as LinkIcon, Check, Copy, Zap, Timer, AlertTriangle, Plus, Star } from 'lucide-react';
+import { showToast } from './Toast';
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -25,8 +25,12 @@ function formatSpeed(bps) {
   return `${(bps / 1048576).toFixed(2)} MB/s`;
 }
 
-export default function TransferModal({ isOpen, onClose, files, shareLink, status, progress, speed, eta, currentFile, onAddFiles }) {
+export default function TransferModal({ isOpen, onClose, files, shareLink, roomId, status, progress, speed, eta, currentFile, onAddFiles }) {
   const [copied, setCopied] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   if (!isOpen) return null;
 
@@ -34,6 +38,33 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
     navigator.clipboard.writeText(shareLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const submitReview = async (e) => {
+    e.preventDefault();
+    if (comment.trim().length < 10) {
+      showToast('Comment must be at least 10 characters', 'error');
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating, comment, roomId }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        showToast(data.error, 'error');
+      } else {
+        showToast('Review submitted successfully!', 'success');
+        setReviewSubmitted(true);
+      }
+    } catch {
+      showToast('Failed to submit review', 'error');
+    } finally {
+      setSubmittingReview(false);
+    }
   };
 
   const totalSize = files?.reduce((a, f) => a + f.size, 0) || 0;
@@ -143,9 +174,56 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, statu
         )}
 
         {status === 'done' && (
-          <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-            <div className="flex justify-center mb-2"><Check size={48} className="text-emerald-500" /></div>
-            <p style={{ color: '#10b981', fontWeight: 800, fontSize: '1.2rem' }}>Transfer Complete!</p>
+          <div style={{ padding: '1rem 0' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+              <div className="flex justify-center mb-2"><Check size={48} className="text-emerald-500" /></div>
+              <p style={{ color: '#10b981', fontWeight: 800, fontSize: '1.2rem' }}>Transfer Complete!</p>
+            </div>
+            
+            {!reviewSubmitted ? (
+              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '1rem', padding: '1.25rem', marginTop: '1rem' }}>
+                <p style={{ color: 'white', fontWeight: 700, fontSize: '1rem', marginBottom: '0.5rem', textAlign: 'center' }}>Rate your experience</p>
+                <form onSubmit={submitReview} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem' }}>
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setRating(s)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem' }}
+                      >
+                        <Star size={24} fill={s <= rating ? '#f59e0b' : 'none'} color={s <= rating ? '#f59e0b' : 'rgba(255,255,255,0.2)'} />
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value.slice(0, 1000))}
+                    placeholder="Tell us what you think... (min 10 chars)"
+                    rows={3}
+                    style={{
+                      background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '0.5rem', padding: '0.75rem', color: 'white', fontSize: '0.875rem',
+                      resize: 'none'
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={submittingReview || comment.trim().length < 10}
+                    style={{
+                      background: '#6366f1', color: 'white', border: 'none', borderRadius: '0.5rem',
+                      padding: '0.75rem', fontWeight: 700, cursor: 'pointer', opacity: (submittingReview || comment.trim().length < 10) ? 0.5 : 1
+                    }}
+                  >
+                    {submittingReview ? 'Submitting...' : 'Submit Review'}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '1rem', padding: '1rem', marginTop: '1rem' }}>
+                <p style={{ color: '#10b981', fontWeight: 600, fontSize: '0.95rem' }}>Thank you for your feedback!</p>
+              </div>
+            )}
           </div>
         )}
 

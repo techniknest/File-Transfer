@@ -521,6 +521,7 @@ export default function Dashboard() {
         onClose={handleModalClose}
         files={files}
         shareLink={shareLink}
+        roomId={roomId}
         status={transferStatus}
         progress={progress}
         speed={speed}

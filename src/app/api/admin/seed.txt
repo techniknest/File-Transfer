@@ -1,0 +1,27 @@
+import { NextResponse } from 'next/server';
+import connectDB from '@/lib/mongodb';
+import User from '@/models/User';
+import bcrypt from 'bcryptjs';
+
+export async function GET() {
+  try {
+    await connectDB();
+    
+    const existing = await User.findOne({ email: 'admin@techniknest.com' });
+    if (existing) {
+      return NextResponse.json({ message: 'Admin already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash('Admin@2026', 12);
+    await User.create({
+      name: 'Admin',
+      email: 'admin@techniknest.com',
+      password: hashedPassword,
+      role: 'admin'
+    });
+
+    return NextResponse.json({ message: 'Admin created successfully' });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
