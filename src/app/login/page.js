@@ -4,7 +4,7 @@ import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { showToast } from '../components/Toast';
-import { Zap, XCircle, Eye, EyeOff, Lock, Folder } from 'lucide-react';
+import { Zap, XCircle, Eye, EyeOff, Lock, Folder, ArrowLeft } from 'lucide-react';
 
 
 function LoginForm() {
@@ -38,9 +38,20 @@ function LoginForm() {
       setLoading(false);
       return;
     }
-
-    showToast('Signed in successfully! Welcome back.', 'success');
-    router.push('/dashboard');
+    try {
+      const res = await fetch('/api/auth/session', { cache: 'no-store' });
+      const session = await res.json();
+      
+      showToast('Signed in successfully! Welcome back.', 'success');
+      if (session?.user?.role === 'admin') {
+        router.push('/admin');
+      } else {
+        router.push('/dashboard');
+      }
+    } catch (err) {
+      showToast('Signed in successfully! Welcome back.', 'success');
+      router.push('/dashboard');
+    }
   };
 
   return (
@@ -68,12 +79,18 @@ function LoginForm() {
         pointerEvents: 'none', zIndex: 0,
       }} />
 
+      <div style={{ position: 'absolute', top: '1.5rem', left: '1.5rem', zIndex: 10 }}>
+        <Link href="/" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
+          <ArrowLeft size={16} /> <span style={{ fontWeight: 600 }}>Back to Home</span>
+        </Link>
+      </div>
+
       <div
         className="glass-card animate-pop-in"
         style={{
           width: '100%',
-          maxWidth: '600px',
-          padding: '3rem',
+          maxWidth: '500px',
+          padding: '2rem',
           position: 'relative',
           zIndex: 1,
           border: '1px solid rgba(99,102,241,0.15)',
@@ -81,7 +98,7 @@ function LoginForm() {
         }}
       >
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem', justifyContent: 'center' }}>
           <div
             className="gradient-brand animate-glow"
             style={{ width: '48px', height: '48px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
@@ -94,10 +111,10 @@ function LoginForm() {
           </div>
         </div>
 
-        <h1 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center', marginBottom: '0.5rem' }}>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center', marginBottom: '0.5rem' }}>
           Welcome Back
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', textAlign: 'center', marginBottom: '2.5rem' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', marginBottom: '1.5rem' }}>
           Sign in to your account to continue transferring files.
         </p>
 
@@ -120,7 +137,7 @@ function LoginForm() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
             <label style={{
               display: 'block',
@@ -142,8 +159,8 @@ function LoginForm() {
               required
               autoComplete="email"
               style={{
-                padding: '1.25rem 1.5rem',
-                fontSize: '1.25rem',
+                padding: '1rem 1.25rem',
+                fontSize: '1rem',
                 borderRadius: '0.75rem',
                 transition: 'all 0.2s ease',
               }}
@@ -172,8 +189,8 @@ function LoginForm() {
                 required
                 autoComplete="current-password"
                 style={{
-                  padding: '1.25rem 3.5rem 1.25rem 1.5rem',
-                  fontSize: '1.25rem',
+                  padding: '1rem 3rem 1rem 1.25rem',
+                  fontSize: '1rem',
                   borderRadius: '0.75rem',
                 }}
               />
@@ -206,8 +223,8 @@ function LoginForm() {
             className="btn btn-primary"
             style={{
               width: '100%',
-              padding: '1.25rem 2rem',
-              fontSize: '1.25rem',
+              padding: '1rem 1.5rem',
+              fontSize: '1.1rem',
               fontWeight: 700,
               borderRadius: '0.75rem',
               marginTop: '0.5rem',
@@ -224,7 +241,7 @@ function LoginForm() {
           </button>
         </form>
 
-        <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+        <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>
             Don&apos;t have an account?{' '}
             <Link
@@ -247,8 +264,8 @@ function LoginForm() {
           gap: '0.5rem',
           justifyContent: 'center',
           flexWrap: 'wrap',
-          marginTop: '2rem',
-          paddingTop: '1.5rem',
+          marginTop: '1.5rem',
+          paddingTop: '1.25rem',
           borderTop: '1px solid var(--border-default)',
         }}>
           {[

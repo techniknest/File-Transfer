@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { showToast } from '../components/Toast';
-import { Zap, XCircle, Eye, EyeOff, Rocket, CheckCircle, Lock } from 'lucide-react';
+import { Zap, XCircle, Eye, EyeOff, Rocket, CheckCircle, Lock, ArrowLeft } from 'lucide-react';
 
 
 export default function RegisterPage() {
@@ -92,12 +92,18 @@ export default function RegisterPage() {
         pointerEvents: 'none', zIndex: 0,
       }} />
 
+      <div style={{ position: 'absolute', top: '1.5rem', left: '1.5rem', zIndex: 10 }}>
+        <Link href="/" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
+          <ArrowLeft size={16} /> <span style={{ fontWeight: 600 }}>Back to Home</span>
+        </Link>
+      </div>
+
       <div
         className="glass-card animate-pop-in"
         style={{
           width: '100%',
-          maxWidth: '620px',
-          padding: '3rem',
+          maxWidth: '520px',
+          padding: '2rem',
           position: 'relative',
           zIndex: 1,
           border: '1px solid rgba(139,92,246,0.15)',
@@ -105,7 +111,7 @@ export default function RegisterPage() {
         }}
       >
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem', justifyContent: 'center' }}>
           <div
             style={{
               width: '48px', height: '48px', borderRadius: '14px',
@@ -122,10 +128,10 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        <h1 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center', marginBottom: '0.5rem' }}>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center', marginBottom: '0.5rem' }}>
           Create Account
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', textAlign: 'center', marginBottom: '2.5rem' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', marginBottom: '1.5rem' }}>
           Join thousands of users sharing files directly with zero cloud storage.
         </p>
 
@@ -140,7 +146,7 @@ export default function RegisterPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
               Full Name
@@ -154,7 +160,7 @@ export default function RegisterPage() {
               className="input"
               required
               autoComplete="name"
-              style={{ padding: '1.25rem 1.5rem', fontSize: '1.25rem', borderRadius: '0.75rem' }}
+              style={{ padding: '1rem 1.25rem', fontSize: '1rem', borderRadius: '0.75rem' }}
             />
           </div>
 
@@ -171,7 +177,7 @@ export default function RegisterPage() {
               className="input"
               required
               autoComplete="email"
-              style={{ padding: '1.25rem 1.5rem', fontSize: '1.25rem', borderRadius: '0.75rem' }}
+              style={{ padding: '1rem 1.25rem', fontSize: '1rem', borderRadius: '0.75rem' }}
             />
           </div>
 
@@ -192,7 +198,7 @@ export default function RegisterPage() {
                 className="input"
                 required
                 autoComplete="new-password"
-                style={{ padding: '1.25rem 3.5rem 1.25rem 1.5rem', fontSize: '1.25rem', borderRadius: '0.75rem' }}
+                style={{ padding: '1rem 3rem 1rem 1.25rem', fontSize: '1rem', borderRadius: '0.75rem' }}
               />
               <button
                 type="button"
@@ -242,7 +248,7 @@ export default function RegisterPage() {
               required
               autoComplete="new-password"
               style={{
-                padding: '1.25rem 1.5rem', fontSize: '1.25rem', borderRadius: '0.75rem',
+                padding: '1rem 1.25rem', fontSize: '1rem', borderRadius: '0.75rem',
                 borderColor: form.confirm && form.password !== form.confirm ? 'rgba(239,68,68,0.5)' : undefined,
               }}
             />
@@ -257,7 +263,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="btn btn-primary"
             style={{
-              width: '100%', padding: '1.25rem 2rem', fontSize: '1.25rem',
+              width: '100%', padding: '1rem 1.5rem', fontSize: '1.1rem',
               fontWeight: 700, borderRadius: '0.75rem', marginTop: '0.5rem',
             }}
           >
@@ -270,7 +276,7 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+        <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>
             Already have an account?{' '}
             <Link href="/login" style={{ color: 'var(--text-accent)', fontWeight: 700, textDecoration: 'none' }}>
@@ -282,7 +288,7 @@ export default function RegisterPage() {
         {/* Feature pills */}
         <div style={{
           display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap',
-          marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-default)',
+          marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-default)',
         }}>
           {[
             { text: 'Free forever', icon: <CheckCircle size={14} /> },

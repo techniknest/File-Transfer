@@ -48,20 +48,28 @@ function StatCounter({ value, label, suffix = '' }) {
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  const [stats, setStats] = useState({ totalDataFormatted: '0 GB', totalUsers: 0 });
+  const [reviews, setReviews] = useState([]);
 
-  const testimonials = [
-    { name: 'Sarah K.', role: 'Video Editor', text: 'Finally sent my 8GB project file without compressing it. No upload wait — just instant link and done!', rating: 5 },
-    { name: 'James T.', role: 'Software Developer', text: 'Needed to share a DB backup with a colleague on the other side of the world. Worked perfectly, no cloud, no drama.', rating: 5 },
-    { name: 'Priya M.', role: 'Photographer', text: 'I transfer RAW photo batches to clients daily. P2P Transfer replaced WeTransfer completely for me.', rating: 5 },
-  ];
+  useEffect(() => {
+    setMounted(true);
+    fetch('/api/stats/public')
+      .then(r => r.json())
+      .then(data => { if (!data.error) setStats(data); })
+      .catch(e => console.log(e));
+    
+    fetch('/api/reviews?limit=3')
+      .then(r => r.json())
+      .then(data => { if (!data.error) setReviews(data.reviews || []); })
+      .catch(e => console.log(e));
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--bg-base)' }}>
       <Navbar />
 
       {/* ── Hero ── */}
-      <section style={{ position: 'relative', overflow: 'hidden', padding: '160px 1.5rem 80px', textAlign: 'center' }}>
+      <section style={{ position: 'relative', overflow: 'hidden', padding: '0 1.5rem', textAlign: 'center', minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style={{
           position: 'absolute', top: '-10%', left: '50%', transform: 'translateX(-50%)',
           width: '700px', height: '700px', borderRadius: '50%',
@@ -112,10 +120,10 @@ export default function HomePage() {
       {/* ── Stats ── */}
       <section style={{ padding: '3rem 1.5rem', background: 'var(--bg-surface)', borderTop: '1px solid var(--border-default)', borderBottom: '1px solid var(--border-default)' }}>
         <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '2rem' }}>
-          <StatCounter value="0 GB" label="Storage Used" />
+          <StatCounter value={stats.totalDataFormatted} label="Data Transferred" />
           <StatCounter value={100} suffix="%" label="P2P Encrypted" />
-          <StatCounter value="None" label="Maximum File Size Limit" />
-          <StatCounter value="Free" label="Cost Forever" />
+          <StatCounter value={stats.totalUsers} label="Registered Users" />
+          <StatCounter value="None" label="Size Limits" />
         </div>
       </section>
 
@@ -225,33 +233,35 @@ export default function HomePage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
-            {testimonials.map((t, i) => (
+            {reviews.length > 0 ? reviews.map((r, i) => (
               <div key={i} className="glass-card card-hover" style={{ padding: '2rem' }}>
                 {/* Stars */}
                 <div style={{ display: 'flex', gap: '0.2rem', marginBottom: '1rem' }}>
-                  {Array.from({ length: t.rating }).map((_, j) => (
+                  {Array.from({ length: r.rating }).map((_, j) => (
                     <Star key={j} size={16} style={{ fill: '#f59e0b', color: '#f59e0b' }} />
                   ))}
                 </div>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: 1.7, marginBottom: '1.5rem', fontStyle: 'italic' }}>
-                  &ldquo;{t.text}&rdquo;
+                  &ldquo;{r.comment}&rdquo;
                 </p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <div style={{
                     width: '40px', height: '40px', borderRadius: '50%',
                     background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'white', fontWeight: 700, fontSize: '1rem',
+                    color: 'white', fontWeight: 700, fontSize: '1rem', flexShrink: 0,
                   }}>
-                    {t.name[0]}
+                    {r.userName?.[0]?.toUpperCase() || 'U'}
                   </div>
                   <div>
-                    <p style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.9rem' }}>{t.name}</p>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{t.role}</p>
+                    <p style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.9rem' }}>{r.userName}</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Verified User</p>
                   </div>
                 </div>
               </div>
-            ))}
+            )) : (
+              <p style={{ color: 'var(--text-secondary)', textAlign: 'center', gridColumn: '1 / -1' }}>No reviews available yet.</p>
+            )}
           </div>
         </div>
       </section>

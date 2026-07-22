@@ -2,6 +2,10 @@ const { createServer } = require('http');
 const next = require('next');
 const { Server } = require('socket.io');
 
+const { loadEnvConfig } = require('@next/env');
+const projectDir = process.cwd();
+loadEnvConfig(projectDir);
+
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
@@ -24,6 +28,14 @@ app.prepare().then(() => {
     console.log(`[+] Connected: ${socket.id} | Total: ${activeConnections.count}`);
 
     socket.on('create-room', (roomId) => {
+      const oldRoomId = socket.data.roomId;
+      if (oldRoomId && oldRoomId !== roomId) {
+        socket.leave(oldRoomId);
+        if (rooms[oldRoomId] && rooms[oldRoomId].sender === socket.id) {
+          delete rooms[oldRoomId];
+        }
+      }
+
       if (rooms[roomId] && rooms[roomId].sender === socket.id) {
         socket.emit('room-created', { roomId });
         return;
@@ -36,6 +48,14 @@ app.prepare().then(() => {
     });
 
     socket.on('join-room', (roomId) => {
+      const oldRoomId = socket.data.roomId;
+      if (oldRoomId && oldRoomId !== roomId) {
+        socket.leave(oldRoomId);
+        if (rooms[oldRoomId] && rooms[oldRoomId].receiver === socket.id) {
+          rooms[oldRoomId].receiver = null;
+        }
+      }
+
       const room = rooms[roomId];
 
       if (!room) {

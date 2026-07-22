@@ -56,7 +56,15 @@ export default function AdminOverviewPage() {
     setLoading(true);
     fetch('/api/admin/stats')
       .then(r => r.json())
-      .then(data => { setStats(data); setLoading(false); })
+      .then(data => {
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setStats(data);
+          setError('');
+        }
+        setLoading(false);
+      })
       .catch(e => { setError(e.message); setLoading(false); });
   };
 

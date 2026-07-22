@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
 async function connectDB() {
+  const MONGODB_URI = process.env.MONGODB_URI;
+  console.log(`URI exists: ${!!MONGODB_URI}`);
+
   if (global.mongoose?.conn) return global.mongoose.conn;
 
   if (!global.mongoose) {
@@ -11,8 +12,11 @@ async function connectDB() {
 
   try {
     if (!global.mongoose.promise) {
+      if (!MONGODB_URI) {
+        throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
+      }
       global.mongoose.promise = mongoose.connect(MONGODB_URI, {
-        serverSelectionTimeoutMS: 3000
+        serverSelectionTimeoutMS: 30000
       });
     }
     global.mongoose.conn = await global.mongoose.promise;
@@ -20,7 +24,9 @@ async function connectDB() {
     return global.mongoose.conn;
   } catch (error) {
     console.error('MongoDB connection error:', error.message);
-    return null;
+    // Reset the promise so we can attempt to reconnect on the next request
+    global.mongoose.promise = null;
+    throw error;
   }
 }
 

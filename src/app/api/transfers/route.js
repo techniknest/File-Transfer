@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import TransferRecord from '@/models/TransferRecord';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export async function GET(request) {
   try {
     await connectDB();
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
 
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -57,7 +58,7 @@ export async function POST(request) {
       senderEmail: senderEmail || 'anonymous',
       receiverEmail: receiverEmail || 'anonymous',
       files: files || [],
-      totalSize: totalSize || 0,
+      totalSize: Number(totalSize) || 0,
       status: 'completed',
     });
 

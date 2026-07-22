@@ -4,10 +4,13 @@ import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import TransferRecord from '@/models/TransferRecord';
 import ErrorLog from '@/models/ErrorLog';
+import { authOptions } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
@@ -75,7 +78,7 @@ export async function GET() {
     const rooms = global._p2pRooms?.() || {};
     const activeSessions = Object.keys(rooms).length;
 
-    const totalBytes = totalDataAgg[0]?.totalBytes || 0;
+    const totalBytes = totalDataAgg?.length > 0 ? (totalDataAgg[0]?.totalBytes || 0) : 0;
     const successRate = totalTransfers > 0 ? Math.round((successTransfers / totalTransfers) * 100) : 0;
 
     return NextResponse.json({

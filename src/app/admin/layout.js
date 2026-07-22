@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useTheme } from '../components/ThemeProvider';
 import {
   LayoutDashboard, Users, FileText, Activity, Shield,
-  Moon, Sun, ArrowLeft, Menu, Star, Settings
+  Moon, Sun, ArrowLeft, Menu, Star, Settings, MessageSquare
 } from 'lucide-react';
 
 const ADMIN_NAV = [
@@ -13,6 +13,7 @@ const ADMIN_NAV = [
   { href: '/admin/users', label: 'Users', icon: <Users size={20} /> },
   { href: '/admin/transfers', label: 'Transfers', icon: <FileText size={20} /> },
   { href: '/admin/reviews', label: 'Reviews', icon: <Star size={20} /> },
+  { href: '/admin/complaints', label: 'Complaints', icon: <MessageSquare size={20} /> },
   { href: '/admin/health', label: 'System Health', icon: <Activity size={20} /> },
   { href: '/admin/settings', label: 'Settings', icon: <Settings size={20} /> },
 ];
@@ -129,27 +130,43 @@ export default function AdminLayout({ children }) {
       {/* Main content */}
       <main style={{ flex: 1, marginLeft: '256px', minHeight: '100vh', display: 'flex', flexDirection: 'column' }} className="main-with-sidebar">
         {/* Header */}
-        <header className="glass" style={{ borderBottom: '1px solid var(--border-default)', padding: '0 1.5rem', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <header style={{
+          background: 'var(--bg-glass)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderBottom: '1px solid var(--border-glass)',
+          padding: '0 2rem',
+          height: '72px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <button
               onClick={() => setSidebarOpen(true)}
               className="btn btn-ghost btn-icon mobile-menu-btn"
               aria-label="Open sidebar"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
             >
               <Menu size={20} />
             </button>
-            <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <Shield size={14} /> Admin Mode
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(245,158,11,0.1)', padding: '0.4rem 0.8rem', borderRadius: '999px', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <Shield size={16} color="#f59e0b" />
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#f59e0b', letterSpacing: '0.02em' }}>Admin Mode</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <a href="/admin/settings" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <Settings size={14} /> Settings
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <a href="/admin/settings" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
+              <Settings size={16} /> <span className="hide-mobile">Settings</span>
             </a>
-            <a href="/dashboard" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <ArrowLeft size={14} /> Back to App
+            <a href="/dashboard" className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
+              <ArrowLeft size={16} /> <span className="hide-mobile">Back to App</span>
             </a>
-            <button onClick={() => signOut({ callbackUrl: '/login' })} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}>
+            <button onClick={() => signOut({ callbackUrl: '/login' })} className="btn btn-primary btn-sm" style={{ marginLeft: '0.5rem' }}>
               Sign Out
             </button>
           </div>
@@ -163,9 +180,11 @@ export default function AdminLayout({ children }) {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         .mobile-menu-btn { display: none; }
+        .hide-mobile { display: inline; }
         @media (max-width: 768px) {
           main { margin-left: 0 !important; }
           .mobile-menu-btn { display: flex !important; }
+          .hide-mobile { display: none !important; }
         }
       `}</style>
     </div>

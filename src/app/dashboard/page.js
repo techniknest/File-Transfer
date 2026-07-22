@@ -291,28 +291,37 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', flexDirection: 'column' }}>
       {/* Navbar */}
-      <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Zap className="text-white" size={16} />
+      <nav style={{
+        background: 'var(--bg-glass)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--border-default)',
+        padding: '1rem 1.5rem',
+        position: 'sticky',
+        top: 0,
+        zIndex: 40
+      }}>
+        <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none' }}>
+            <div className="gradient-brand" style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Zap className="text-white" size={18} />
             </div>
-            <span className="font-bold text-xl">P2P Transfer</span>
+            <span style={{ fontWeight: 800, fontSize: '1.25rem', color: 'var(--text-primary)' }}>P2P Transfer</span>
           </Link>
-          <div className="flex items-center gap-3">
-            <span className="text-gray-400 text-sm">
-              Welcome, <span className="text-white font-medium">{session?.user?.name}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', display: 'none', '@media (minWidth: 600px)': { display: 'block' } }}>
+              Welcome, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{session?.user?.name}</span>
             </span>
             {session?.user?.role === 'admin' && (
-              <Link href="/admin" className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-sm transition-all">
+              <Link href="/admin" className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
                 Admin
               </Link>
             )}
             <button
               onClick={() => signOut({ callbackUrl: '/login' })}
-              className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg text-sm transition-all"
+              className="btn btn-secondary"
+              style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
             >
               Sign Out
             </button>
@@ -320,60 +329,61 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      <main className="max-w-5xl mx-auto px-6 py-12">
-
+      <main style={{ flex: 1, maxWidth: '1000px', margin: '0 auto', width: '100%', padding: '2rem 1.5rem' }} className="page-enter">
         {/* ── HOME ── */}
         {view === 'home' && (
           <div>
-            <div className="text-center mb-12">
-              <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+              <h1 style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '0.75rem', background: 'linear-gradient(135deg, #60a5fa, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 Transfer Files
               </h1>
-              <p className="text-gray-400 text-lg">P2P encrypted transfers. No cloud, no size limits.</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>P2P encrypted transfers. No cloud, no size limits.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
               <button
                 onClick={() => setView('send')}
-                className="bg-gray-900 border border-gray-800 hover:border-blue-500 rounded-2xl p-8 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/10 group"
+                className="card card-hover"
+                style={{ textAlign: 'left', padding: '2rem', background: 'var(--bg-glass)', border: '1px solid var(--border-default)', display: 'block', width: '100%', cursor: 'pointer' }}
               >
-                <div className="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center mb-4 shadow-lg shadow-blue-600/30">
-                  <Upload className="text-white" size={32} />
+                <div className="gradient-brand" style={{ width: '56px', height: '56px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem' }}>
+                  <Upload className="text-white" size={28} />
                 </div>
-                <h2 className="text-xl font-bold mb-2">Send Files</h2>
-                <p className="text-gray-400 text-sm leading-relaxed">Select your files, generate a secure transfer link, and share it with anyone.</p>
-                <div className="flex gap-2 mt-4 flex-wrap">
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Send Files</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: 1.5, marginBottom: '1.5rem' }}>Select your files, generate a secure transfer link, and share it with anyone.</p>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   {['No size limit', 'Encrypted', 'Instant'].map(t => (
-                    <span key={t} className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded-full text-xs font-medium">{t}</span>
+                    <span key={t} className="badge" style={{ background: 'rgba(99,102,241,0.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.2)' }}>{t}</span>
                   ))}
                 </div>
               </button>
 
               <button
                 onClick={() => setView('receive')}
-                className="bg-gray-900 border border-gray-800 hover:border-green-500 rounded-2xl p-8 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-green-500/10 group"
+                className="card card-hover"
+                style={{ textAlign: 'left', padding: '2rem', background: 'var(--bg-glass)', border: '1px solid var(--border-default)', display: 'block', width: '100%', cursor: 'pointer' }}
               >
-                <div className="w-14 h-14 bg-green-600 rounded-xl flex items-center justify-center mb-4 shadow-lg shadow-green-600/30">
-                  <Download className="text-white" size={32} />
+                <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem' }}>
+                  <Download className="text-white" size={28} />
                 </div>
-                <h2 className="text-xl font-bold mb-2">Receive Files</h2>
-                <p className="text-gray-400 text-sm leading-relaxed">Paste a transfer link to receive files with live progress tracking.</p>
-                <div className="flex gap-2 mt-4 flex-wrap">
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Receive Files</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: 1.5, marginBottom: '1.5rem' }}>Paste a transfer link to receive files with live progress tracking.</p>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   {['Auto-download', 'Live progress', 'P2P direct'].map(t => (
-                    <span key={t} className="bg-green-600/20 text-green-400 px-2 py-1 rounded-full text-xs font-medium">{t}</span>
+                    <span key={t} className="badge" style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399', border: '1px solid rgba(16,185,129,0.2)' }}>{t}</span>
                   ))}
                 </div>
               </button>
             </div>
 
             {/* Quick feature badges */}
-            <div className="flex flex-wrap gap-3 justify-center mt-10 text-sm text-gray-500">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'center', marginTop: '3rem' }}>
               {[
                 { icon: <Shield size={14} />, label: 'End-to-End Encrypted' },
                 { icon: <CloudOff size={14} />, label: 'No Cloud Storage' },
                 { icon: <Zap size={14} />, label: 'Full Speed Transfer' },
               ].map((b, i) => (
-                <div key={i} className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-full">
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-glass)', border: '1px solid var(--border-default)', padding: '0.4rem 1rem', borderRadius: '999px', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
                   {b.icon} {b.label}
                 </div>
               ))}
@@ -383,17 +393,18 @@ export default function Dashboard() {
 
         {/* ── SEND ── */}
         {view === 'send' && (
-          <div>
+          <div className="animate-fade-up">
             <button
               onClick={handleGoBack}
-              className="text-gray-400 hover:text-white mb-6 flex items-center gap-2 transition-all text-sm"
+              className="btn btn-ghost btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', padding: 0 }}
             >
-              <ArrowLeft size={16} /> Back
+              <ArrowLeft size={16} /> <span style={{ fontWeight: 600 }}>Back</span>
             </button>
 
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
-              <h2 className="text-2xl font-bold mb-2">Send Files</h2>
-              <p className="text-gray-400 mb-8">
+            <div className="glass-card" style={{ padding: '2rem' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Send Files</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '2rem' }}>
                 Select all your files first, then generate a transfer link to share.
               </p>
 
@@ -408,38 +419,43 @@ export default function Dashboard() {
                   const dropped = [...e.dataTransfer.files];
                   if (dropped.length) handleFilesSelected(dropped);
                 }}
-                className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
-                  isDragging
-                    ? 'border-blue-400 bg-blue-500/10 scale-[1.01]'
-                    : 'border-gray-700 hover:border-blue-500 hover:bg-blue-500/5'
-                }`}
+                style={{
+                  border: isDragging ? '2px dashed #818cf8' : '2px dashed var(--border-default)',
+                  background: isDragging ? 'rgba(99,102,241,0.05)' : 'var(--bg-glass)',
+                  borderRadius: '1rem',
+                  padding: '3rem 1.5rem',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  marginBottom: '2rem'
+                }}
               >
-                <div className="flex justify-center mb-4">
-                  <Folder size={56} className="text-indigo-400" />
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+                  <Folder size={48} style={{ color: '#818cf8' }} />
                 </div>
-                <p className="text-white font-bold text-xl mb-2">
+                <p style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem', marginBottom: '0.5rem' }}>
                   {isDragging ? 'Drop files here' : 'Click to select or drag & drop'}
                 </p>
-                <p className="text-gray-400">Any file type · No size limit · Select multiple</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Any file type · No size limit · Select multiple</p>
                 <input
                   id="dashFileInput"
                   type="file"
                   multiple
-                  className="hidden"
+                  style={{ display: 'none' }}
                   onChange={e => { if (e.target.files?.length) handleFilesSelected([...e.target.files]); e.target.value = ''; }}
                 />
               </div>
 
               {/* File list */}
               {files.length > 0 && (
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-gray-400 text-sm font-semibold">
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.05em' }}>
                       {files.length} FILE{files.length !== 1 ? 'S' : ''} SELECTED — {formatBytes(files.reduce((a, f) => a + f.size, 0))}
                     </p>
                     <button
                       onClick={() => document.getElementById('dashAddMoreInput').click()}
-                      className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1 transition-colors"
+                      style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}
                     >
                       <Plus size={14} /> Add More
                     </button>
@@ -447,29 +463,30 @@ export default function Dashboard() {
                       id="dashAddMoreInput"
                       type="file"
                       multiple
-                      className="hidden"
+                      style={{ display: 'none' }}
                       onChange={e => { if (e.target.files?.length) handleFilesSelected([...e.target.files]); e.target.value = ''; }}
                     />
                   </div>
-                  <div className="max-h-48 overflow-y-auto flex flex-col gap-2 mb-6">
+                  
+                  <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '2rem' }}>
                     {files.map((f, i) => (
-                      <div key={i} className="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-2.5">
-                        <File size={18} className="text-gray-400 flex-shrink-0" />
-                        <span className="text-white text-sm flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap">{f.name}</span>
-                        <span className="text-gray-400 text-xs flex-shrink-0">{formatBytes(f.size)}</span>
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--bg-glass)', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: '1px solid var(--border-default)' }}>
+                        <File size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        <span style={{ color: 'var(--text-primary)', fontSize: '0.9rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', flexShrink: 0 }}>{formatBytes(f.size)}</span>
                         {transferStatus === 'idle' && !roomIdRef.current && (
-                          <button onClick={() => removeFile(i)} className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0">
-                            <X size={16} />
+                          <button onClick={() => removeFile(i)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', flexShrink: 0 }}>
+                            <X size={16} className="hover-danger" />
                           </button>
                         )}
                       </div>
                     ))}
                   </div>
 
-                  {/* Generate Link button */}
                   <button
                     onClick={handleGenerateLink}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 rounded-xl transition-all text-lg flex items-center justify-center gap-2 hover:-translate-y-0.5 shadow-lg shadow-blue-600/25"
+                    className="btn btn-primary"
+                    style={{ width: '100%', padding: '1rem', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
                   >
                     <LinkIcon size={20} />
                     {roomIdRef.current ? 'View Transfer Link' : 'Generate Transfer Link'}
@@ -482,34 +499,40 @@ export default function Dashboard() {
 
         {/* ── RECEIVE ── */}
         {view === 'receive' && (
-          <div>
-            <button onClick={() => setView('home')} className="text-gray-400 hover:text-white mb-6 flex items-center gap-2 transition-all text-sm">
-              <ArrowLeft size={16} /> Back
+          <div className="animate-fade-up">
+            <button
+              onClick={() => setView('home')}
+              className="btn btn-ghost btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', padding: 0 }}
+            >
+              <ArrowLeft size={16} /> <span style={{ fontWeight: 600 }}>Back</span>
             </button>
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
-              <h2 className="text-2xl font-bold mb-2">Receive Files</h2>
-              <p className="text-gray-400 mb-8">Paste a transfer link to receive files directly from the sender.</p>
+            <div className="glass-card" style={{ padding: '2rem' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Receive Files</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '2rem' }}>Paste a transfer link to receive files directly from the sender.</p>
 
-              <div className="space-y-4">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 <div>
-                  <label className="text-gray-300 font-medium text-sm mb-2 block">Transfer Link</label>
+                  <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Transfer Link</label>
                   <input
                     type="text"
                     placeholder="https://…/receive?room=XXXXXX or room code"
                     value={receiveLink}
                     onChange={e => setReceiveLink(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && receiveLink.trim()) startReceiver(); }}
-                    className="w-full bg-gray-800 text-white rounded-xl px-5 py-4 border border-gray-700 focus:outline-none focus:border-green-500 text-lg transition-all"
+                    className="input"
+                    style={{ width: '100%', padding: '1rem', fontSize: '1rem' }}
                   />
                 </div>
                 <button
                   onClick={startReceiver}
                   disabled={!receiveLink.trim()}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all text-lg hover:-translate-y-0.5 flex items-center justify-center gap-2"
+                  className="btn btn-primary"
+                  style={{ width: '100%', padding: '1rem', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: !receiveLink.trim() ? 'var(--border-default)' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none' }}
                 >
                   <Download size={20} /> Start Receiving
                 </button>
-                <p className="text-center text-gray-500 text-sm">No login required to receive files</p>
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No login required to receive files</p>
               </div>
             </div>
           </div>
