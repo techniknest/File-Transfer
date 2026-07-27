@@ -627,3 +627,73 @@ a { text-decoration: none; }
    PAGE TRANSITIONS
    ================================================ */
 .page-enter { animation: fadeInUp 0.45s ease both; }
+
+/* ================================================
+   RESPONSIVE — ADMIN DASHBOARD
+   ================================================ */
+@media (max-width: 768px) {
+  /* Stat card grids */
+  .stat-card-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Data tables — scroll horizontally */
+  .glass-card { overflow-x: auto; }
+  .data-table th, .data-table td {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  /* Modal box — full width on mobile */
+  .modal-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 1rem 1rem 0 0 !important;
+  }
+  .modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  /* Filter rows wrap on mobile */
+  .filter-row {
+    flex-direction: column !important;
+  }
+  .filter-row form,
+  .filter-row > div {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .filter-row select {
+    width: 100% !important;
+  }
+
+  /* Responsive header in admin */
+  header {
+    padding: 0 1rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Single-column stat cards */
+  .stat-card-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Smaller badge text */
+  .badge { font-size: 0.65rem; padding: 0.15rem 0.5rem; }
+
+  /* Page headers */
+  h1 { font-size: 1.4rem !important; }
+  h2 { font-size: 1.1rem !important; }
+
+  /* Action button groups in table cells */
+  .action-group {
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    gap: 0.25rem !important;
+  }
+}
+

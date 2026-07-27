@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export async function GET(request) {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
@@ -23,7 +24,7 @@ export async function GET(request) {
 
 export async function DELETE() {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }

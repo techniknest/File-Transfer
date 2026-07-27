@@ -32,12 +32,26 @@ export default function AdminLayout({ children }) {
     }
   }, [status, session, router]);
 
-  if (status === 'loading' || session?.user?.role !== 'admin') {
+  // Show spinner while loading session
+  if (status === 'loading') {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', border: '3px solid rgba(245,158,11,0.2)', borderTop: '3px solid #f59e0b', borderRadius: '50%', margin: '0 auto 1rem', animation: 'spin 1s linear infinite' }} />
-          <p style={{ color: 'var(--text-secondary)' }}>Checking permissions...</p>
+          <p style={{ color: 'var(--text-secondary)' }}>Loading admin panel...</p>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // If authenticated but not admin, redirect is handled by useEffect above
+  if (status === 'authenticated' && session?.user?.role !== 'admin') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '48px', height: '48px', border: '3px solid rgba(245,158,11,0.2)', borderTop: '3px solid #f59e0b', borderRadius: '50%', margin: '0 auto 1rem', animation: 'spin 1s linear infinite' }} />
+          <p style={{ color: 'var(--text-secondary)' }}>Redirecting...</p>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
@@ -172,7 +186,7 @@ export default function AdminLayout({ children }) {
           </div>
         </header>
 
-        <div style={{ flex: 1, padding: '2rem 1.5rem' }}>
+        <div style={{ flex: 1, padding: '1.5rem 1.5rem' }} className="admin-content">
           {children}
         </div>
       </main>
@@ -185,6 +199,10 @@ export default function AdminLayout({ children }) {
           main { margin-left: 0 !important; }
           .mobile-menu-btn { display: flex !important; }
           .hide-mobile { display: none !important; }
+          .admin-content { padding: 1rem !important; }
+        }
+        @media (max-width: 480px) {
+          .admin-content { padding: 0.75rem !important; }
         }
       `}</style>
     </div>
