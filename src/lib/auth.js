@@ -9,34 +9,43 @@ export const authOptions = {
       name: 'credentials',
       credentials: {
         email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' }
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
         await connectDB();
-        const user = await User.findOne({ email: credentials.email });
+
+        const user = await User.findOne({
+          email: credentials.email?.toLowerCase()?.trim(),
+        }).lean();
+
         if (!user) throw new Error('No user found');
-        
+
         if (user.status === 'blocked') {
           throw new Error('Account blocked. Contact admin.');
         }
-        
+
         const isValid = await bcrypt.compare(credentials.password, user.password);
         if (!isValid) throw new Error('Invalid password');
-        
-        return { 
-          id: user._id.toString(), 
-          name: user.name, 
-          email: user.email, 
+
+        return {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
           role: user.role,
-          status: user.status
+          status: user.status,
         };
-      }
-    })
+      },
+    }),
   ],
+  session: {
+    strategy: 'jwt',
+    // 30-day JWT sessions — avoids round-trips to DB for session validation
+    maxAge: 30 * 24 * 60 * 60,
+  },
   callbacks: {
     async jwt({ token, user }) {
-      if (user) { 
-        token.role = user.role; 
+      if (user) {
+        token.role = user.role;
         token.id = user.id;
         token.status = user.status;
       }
@@ -47,8 +56,8 @@ export const authOptions = {
       session.user.id = token.id;
       session.user.status = token.status;
       return session;
-    }
+    },
   },
   pages: { signIn: '/login' },
-  secret: process.env.NEXTAUTH_SECRET
+  secret: process.env.NEXTAUTH_SECRET,
 };

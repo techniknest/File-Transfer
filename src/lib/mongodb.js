@@ -1,47 +1,67 @@
 import mongoose from 'mongoose';
 
+// Cached connection for serverless (Vercel) environments
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null, seeded: false };
+}
+
 async function connectDB() {
   const MONGODB_URI = process.env.MONGODB_URI;
-  console.log(`URI exists: ${!!MONGODB_URI}`);
 
-  if (global.mongoose?.conn) return global.mongoose.conn;
+  if (!MONGODB_URI) {
+    throw new Error('Please define the MONGODB_URI environment variable');
+  }
 
-  if (!global.mongoose) {
-    global.mongoose = { conn: null, promise: null };
+  // Return existing connection if available
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  // Create connection promise if not already in progress
+  if (!cached.promise) {
+    const opts = {
+      // Serverless-optimised: don't wait 30s, fail fast and let the client retry
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      // Prevent Mongoose from buffering commands when disconnected
+      bufferCommands: false,
+      // Keep connection pool small for serverless
+      maxPoolSize: 10,
+      minPoolSize: 0,
+    };
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((m) => m);
   }
 
   try {
-    if (!global.mongoose.promise) {
-      if (!MONGODB_URI) {
-        throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
-      }
-      global.mongoose.promise = mongoose.connect(MONGODB_URI, {
-        serverSelectionTimeoutMS: 30000
-      });
-    }
-    global.mongoose.conn = await global.mongoose.promise;
-    console.log('MongoDB connected successfully');
-
-    if (!global.mongoose.seeded) {
-      await autoSeedAdmin();
-    }
-
-    return global.mongoose.conn;
+    cached.conn = await cached.promise;
   } catch (error) {
-    console.error('MongoDB connection error:', error.message);
-    // Reset the promise so we can attempt to reconnect on the next request
-    global.mongoose.promise = null;
+    // Reset so the next request can try again
+    cached.promise = null;
+    console.error('[MongoDB] Connection error:', error.message);
     throw error;
   }
+
+  // Fire-and-forget seed — does NOT block the login/auth response
+  if (!cached.seeded) {
+    cached.seeded = true; // set immediately so parallel requests don't double-seed
+    autoSeedAdmin().catch((e) =>
+      console.error('[Auto-Seed] Failed:', e.message)
+    );
+  }
+
+  return cached.conn;
 }
 
 async function autoSeedAdmin() {
-  if (global.mongoose?.seeded) return;
   try {
     const User = (await import('../models/User.js')).default;
     const bcrypt = (await import('bcryptjs')).default;
 
-    const existingAdmin = await User.findOne({ role: 'admin' });
+    const existingAdmin = await User.findOne({ role: 'admin' }).lean();
 
     if (!existingAdmin) {
       const adminEmail = process.env.ADMIN_EMAIL;
@@ -49,7 +69,8 @@ async function autoSeedAdmin() {
       const adminName = process.env.ADMIN_NAME || 'Admin';
 
       if (adminEmail && adminPassword) {
-        const hashedPassword = await bcrypt.hash(adminPassword, 12);
+        // 10 rounds: still secure, ~3× faster than 12 on serverless CPUs
+        const hashedPassword = await bcrypt.hash(adminPassword, 10);
         await User.create({
           name: adminName,
           email: adminEmail.toLowerCase(),
@@ -57,19 +78,13 @@ async function autoSeedAdmin() {
           role: 'admin',
           status: 'active',
         });
-        console.log(`[Auto-Seed] Admin user registered: ${adminEmail}`);
+        console.log(`[Auto-Seed] Admin user created: ${adminEmail}`);
       } else {
-        console.log('[Auto-Seed] Admin email or password not configured in env. Skipping auto-seed.');
+        console.log('[Auto-Seed] ADMIN_EMAIL/ADMIN_PASSWORD not set. Skipping.');
       }
-    } else {
-      console.log('[Auto-Seed] Admin already exists in database. Skipping.');
-    }
-
-    if (global.mongoose) {
-      global.mongoose.seeded = true;
     }
   } catch (error) {
-    console.error('[Auto-Seed] Failed to seed admin user:', error.message);
+    console.error('[Auto-Seed] Error:', error.message);
   }
 }
 
