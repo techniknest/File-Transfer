@@ -284,11 +284,16 @@ export default function Dashboard() {
     router.push(`/receive?room=${id}`);
   }, [receiveLink, router]);
 
-  if (status === 'loading') return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div>
+  if (status === 'loading' || status === 'unauthenticated') return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ width: '48px', height: '48px', border: '3px solid rgba(99,102,241,0.2)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Loading dashboard…</span>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
+
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', flexDirection: 'column' }}>

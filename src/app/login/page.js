@@ -26,31 +26,54 @@ function LoginForm() {
     setLoading(true);
     setError('');
 
-    const result = await signIn('credentials', {
-      email: form.email,
-      password: form.password,
-      redirect: false,
-    });
-
-    if (result?.error) {
-      setError(result.error || 'Invalid email or password');
-      showToast(result.error || 'Invalid email or password', 'error');
-      setLoading(false);
-      return;
-    }
     try {
-      const res = await fetch('/api/auth/session', { cache: 'no-store' });
-      const session = await res.json();
-      
-      showToast('Signed in successfully! Welcome back.', 'success');
-      if (session?.user?.role === 'admin') {
-        router.push('/admin');
-      } else {
-        router.push('/dashboard');
+      const result = await signIn('credentials', {
+        email: form.email,
+        password: form.password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        const msg = result.error === 'CredentialsSignin'
+          ? 'Invalid email or password'
+          : (result.error || 'Invalid email or password');
+        setError(msg);
+        showToast(msg, 'error');
+        return;
       }
-    } catch (err) {
+
+      if (!result?.ok) {
+        setError('Sign-in failed. Please try again.');
+        showToast('Sign-in failed. Please try again.', 'error');
+        return;
+      }
+
       showToast('Signed in successfully! Welcome back.', 'success');
-      router.push('/dashboard');
+
+      // Fetch the session to get the user role for redirect
+      // Use a short timeout to let the cookie settle before fetching
+      await new Promise((r) => setTimeout(r, 300));
+      let role = 'user';
+      try {
+        const res = await fetch('/api/auth/session', {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        if (res.ok) {
+          const session = await res.json();
+          role = session?.user?.role ?? 'user';
+        }
+      } catch (_) {
+        // fallback to user role
+      }
+
+      router.refresh();
+      router.push(role === 'admin' ? '/admin' : '/dashboard');
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+      showToast('An unexpected error occurred.', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
