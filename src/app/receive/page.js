@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
+import { useSignaling } from '@/hooks/useSignaling';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File, Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info, Ban, Hourglass } from 'lucide-react';
@@ -102,6 +102,7 @@ export default function ReceivePage() {
   const [prefilledRoomId, setPrefilledRoomId] = useState('');
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [toasts, setToasts] = useState([]);
+  const signaling = useSignaling();
 
   // Transfer stats
   const [stats, setStats] = useState({
@@ -116,7 +117,6 @@ export default function ReceivePage() {
   });
 
   // Refs — all mutable state kept out of React for the WebRTC data channel callbacks
-  const socketRef = useRef(null);
   const pcRef = useRef(null);
   const chunksRef = useRef([]);
   const metaRef = useRef(null);
@@ -133,17 +133,11 @@ export default function ReceivePage() {
   };
 
   // ── Core connection logic ─────────────────────────────────────────────────────
-  const connect = (targetRoomId) => {
+  const connect = async (targetRoomId) => {
     if (!targetRoomId) return;
     roomIdRef.current = targetRoomId;
     setRoomId(targetRoomId);
     setStatus('connecting');
-
-    // Always use window.location.origin — works on localhost, ngrok, and any deployed URL
-    const socket = io(window.location.origin, {
-      transports: ['websocket', 'polling'],
-    });
-    socketRef.current = socket;
 
     // Reset tracking
     trackRef.current = { totalBytes: 0, receivedBytes: 0, lastTime: Date.now(), lastBytes: 0 };
@@ -151,173 +145,163 @@ export default function ReceivePage() {
     chunksRef.current = [];
     metaRef.current = null;
 
-    // ── Socket event handlers ──────────────────────────────────────────────────
-
-    socket.on('connect', () => {
-      console.log('[Socket] Connected:', socket.id);
-      socket.emit('join-room', targetRoomId);
-    });
-
-    socket.on('connect_error', (err) => {
-      console.error('[Socket] Connection error:', err);
-      setStatus('error');
-      addToast('Could not connect to server. Please try again.', 'error');
-    });
-
-    socket.on('joined-as-receiver', ({ roomId: rid }) => {
-      console.log('[Socket] Joined room:', rid);
+    try {
+      await signaling.joinRoom(targetRoomId);
       setStatus('waiting');
       addToast('Connected! Waiting for sender to begin...', 'info');
+    } catch (err) {
+      if (err.code === 'ROOM_NOT_FOUND') {
+        setStatus('invalid');
+        addToast('Room not found. Check the link or ask the sender to resend.', 'error');
+      } else if (err.code === 'ROOM_FULL') {
+        setStatus('full');
+        addToast('This transfer room already has a receiver.', 'error');
+      } else {
+        setStatus('error');
+        addToast(err.message || 'Could not connect to room. Please try again.', 'error');
+      }
+      return;
+    }
 
-      // Create RTCPeerConnection NOW so it is ready for the offer
-      const pc = new RTCPeerConnection(ICE_SERVERS);
-      pcRef.current = pc;
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    pcRef.current = pc;
 
-      // Forward ICE candidates to the room
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          socket.emit('ice-candidate', { roomId: rid, candidate: e.candidate });
-        }
-      };
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        signaling.sendSignal('ice-candidate', { candidate: e.candidate });
+      }
+    };
 
-      pc.onconnectionstatechange = () => {
-        console.log('[WebRTC] Connection state:', pc.connectionState);
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-          addToast('P2P connection lost. The sender may have disconnected.', 'warning');
-        }
-      };
+    pc.onconnectionstatechange = () => {
+      console.log('[WebRTC] Connection state:', pc.connectionState);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        addToast('P2P connection lost. The sender may have disconnected.', 'warning');
+      }
+    };
 
-      // ── DataChannel handler ────────────────────────────────────────────────
-      pc.ondatachannel = (e) => {
-        const dc = e.channel;
-        dc.binaryType = 'arraybuffer';
-        console.log('[WebRTC] DataChannel received:', dc.label);
-        setStatus('receiving');
-        addToast('Transfer started!', 'success');
+    // ── DataChannel handler ────────────────────────────────────────────────
+    pc.ondatachannel = (e) => {
+      const dc = e.channel;
+      dc.binaryType = 'arraybuffer';
+      console.log('[WebRTC] DataChannel received:', dc.label);
+      setStatus('receiving');
+      addToast('Transfer started!', 'success');
 
-        dc.onmessage = (ev) => {
-          if (typeof ev.data === 'string') {
-            // ── JSON control messages ──────────────────────────────────────
-            let msg;
-            try { msg = JSON.parse(ev.data); } catch { return; }
+      dc.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          let msg;
+          try { msg = JSON.parse(ev.data); } catch { return; }
 
-            if (msg.type === 'session-info') {
-              trackRef.current.totalBytes = msg.totalBytes || 0;
-              setStats(prev => ({
-                ...prev,
-                totalFiles: msg.totalFiles || 0,
-                totalBytes: msg.totalBytes || 0,
-              }));
-            }
-
-            if (msg.type === 'meta') {
-              metaRef.current = msg;
-              chunksRef.current = [];
-              setStats(prev => ({ ...prev, currentFile: msg.fileName }));
-              console.log('[Receive] Incoming file:', msg.fileName, formatBytes(msg.fileSize));
-            }
-
-            if (msg.type === 'file-end') {
-              const meta = metaRef.current;
-              if (!meta) return;
-
-              // Snapshot chunks before clearing
-              const chunksCopy = [...chunksRef.current];
-              chunksRef.current = [];
-
-              const blob = new Blob(chunksCopy, {
-                type: meta.fileType || 'application/octet-stream',
-              });
-              const url = URL.createObjectURL(blob);
-              const fileEntry = { name: meta.fileName, url, size: blob.size };
-
-              filesRef.current = [...filesRef.current, fileEntry];
-              setReceivedFiles([...filesRef.current]);
-              setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-              addToast(`Received: ${meta.fileName} — click the download button if it didn't save automatically`, 'success', 4000);
-
-              // Use setTimeout(0) to escape the DataChannel message handler context.
-              // Browsers block programmatic clicks fired directly inside WebSocket/DataChannel
-              // message handlers because they are not considered "user gesture" events.
-              setTimeout(() => {
-                try {
-                  const a = document.createElement('a');
-                  a.style.display = 'none';
-                  a.href = url;
-                  a.download = meta.fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  // Revoke after a short delay to allow the browser to start the download
-                  setTimeout(() => {
-                    document.body.removeChild(a);
-                    // Don't revoke URL — keep it alive for the manual download buttons
-                  }, 2000);
-                } catch (err) {
-                  console.warn('[Download] Auto-download blocked, user can use the button:', err);
-                }
-              }, 100);
-            }
-
-            if (msg.type === 'session-end') {
-              setStatus('done');
-              setStats(prev => ({ ...prev, progress: 100 }));
-              addToast('All files received! Check your Downloads folder.', 'success', 6000);
-            }
-
-          } else {
-            // ── Binary chunk ───────────────────────────────────────────────
-            chunksRef.current.push(ev.data);
-            trackRef.current.receivedBytes += ev.data.byteLength;
-
-            const now = Date.now();
-            const elapsed = (now - trackRef.current.lastTime) / 1000;
-            if (elapsed >= 0.2) {
-              const delta = trackRef.current.receivedBytes - trackRef.current.lastBytes;
-              const speed = delta / elapsed;
-              const remaining = trackRef.current.totalBytes - trackRef.current.receivedBytes;
-              const eta = speed > 0 ? remaining / speed : 0;
-              const progress = trackRef.current.totalBytes > 0
-                ? Math.min((trackRef.current.receivedBytes / trackRef.current.totalBytes) * 100, 99.9)
-                : 0;
-
-              trackRef.current.lastTime = now;
-              trackRef.current.lastBytes = trackRef.current.receivedBytes;
-
-              setStats(prev => ({ ...prev, progress, speed, eta }));
-            }
+          if (msg.type === 'session-info') {
+            trackRef.current.totalBytes = msg.totalBytes || 0;
+            setStats(prev => ({
+              ...prev,
+              totalFiles: msg.totalFiles || 0,
+              totalBytes: msg.totalBytes || 0,
+            }));
           }
-        };
 
-        dc.onerror = (err) => {
-          console.error('[DataChannel] Error:', err);
-          addToast('Data channel error. Transfer may have failed.', 'error');
-        };
+          if (msg.type === 'meta') {
+            metaRef.current = msg;
+            chunksRef.current = [];
+            setStats(prev => ({ ...prev, currentFile: msg.fileName }));
+            console.log('[Receive] Incoming file:', msg.fileName, formatBytes(msg.fileSize));
+          }
 
-        dc.onclose = () => {
-          console.log('[DataChannel] Closed');
-        };
+          if (msg.type === 'file-end') {
+            const meta = metaRef.current;
+            if (!meta) return;
+
+            const chunksCopy = [...chunksRef.current];
+            chunksRef.current = [];
+
+            const blob = new Blob(chunksCopy, {
+              type: meta.fileType || 'application/octet-stream',
+            });
+            const url = URL.createObjectURL(blob);
+            const fileEntry = { name: meta.fileName, url, size: blob.size };
+
+            filesRef.current = [...filesRef.current, fileEntry];
+            setReceivedFiles([...filesRef.current]);
+            setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+            addToast(`Received: ${meta.fileName} — click the download button if it didn't save automatically`, 'success', 4000);
+
+            setTimeout(() => {
+              try {
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = meta.fileName;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                  document.body.removeChild(a);
+                }, 2000);
+              } catch (err) {
+                console.warn('[Download] Auto-download blocked, user can use the button:', err);
+              }
+            }, 100);
+          }
+
+          if (msg.type === 'session-end') {
+            setStatus('done');
+            setStats(prev => ({ ...prev, progress: 100 }));
+            addToast('All files received! Check your Downloads folder.', 'success', 6000);
+          }
+
+        } else {
+          chunksRef.current.push(ev.data);
+          trackRef.current.receivedBytes += ev.data.byteLength;
+
+          const now = Date.now();
+          const elapsed = (now - trackRef.current.lastTime) / 1000;
+          if (elapsed >= 0.2) {
+            const delta = trackRef.current.receivedBytes - trackRef.current.lastBytes;
+            const speed = delta / elapsed;
+            const remaining = trackRef.current.totalBytes - trackRef.current.receivedBytes;
+            const eta = speed > 0 ? remaining / speed : 0;
+            const progress = trackRef.current.totalBytes > 0
+              ? Math.min((trackRef.current.receivedBytes / trackRef.current.totalBytes) * 100, 99.9)
+              : 0;
+
+            trackRef.current.lastTime = now;
+            trackRef.current.lastBytes = trackRef.current.receivedBytes;
+
+            setStats(prev => ({ ...prev, progress, speed, eta }));
+          }
+        }
       };
-    });
 
-    // ── WebRTC signalling ──────────────────────────────────────────────────────
+      dc.onerror = (err) => {
+        console.error('[DataChannel] Error:', err);
+        addToast('Data channel error. Transfer may have failed.', 'error');
+      };
+
+      dc.onclose = () => {
+        console.log('[DataChannel] Closed');
+      };
+    };
 
     const pendingCandidates = [];
 
-    socket.on('offer', async ({ offer }) => {
-      console.log('[Socket] Received offer');
-      const pc = pcRef.current;
-      if (!pc) { console.error('No RTCPeerConnection available for offer!'); return; }
+    signaling.off('offer');
+    signaling.off('ice-candidate');
+
+    signaling.on('offer', async (data) => {
+      const offer = data?.offer;
+      const currentPc = pcRef.current;
+      if (!currentPc || !offer) return;
 
       try {
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await currentPc.setRemoteDescription(new RTCSessionDescription(offer));
         for (const candidate of pendingCandidates) {
-          try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.warn(e); }
+          try { await currentPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.warn(e); }
         }
         pendingCandidates.length = 0;
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit('answer', { roomId: roomIdRef.current, answer });
+        const answer = await currentPc.createAnswer();
+        await currentPc.setLocalDescription(answer);
+        await signaling.sendSignal('answer', { answer });
         console.log('[WebRTC] Answer sent');
       } catch (err) {
         console.error('[WebRTC] Error handling offer:', err);
@@ -325,37 +309,19 @@ export default function ReceivePage() {
       }
     });
 
-    socket.on('ice-candidate', async ({ candidate }) => {
-      const pc = pcRef.current;
-      if (pc && candidate) {
-        if (pc.remoteDescription) {
+    signaling.on('ice-candidate', async (data) => {
+      const candidate = data?.candidate;
+      const currentPc = pcRef.current;
+      if (currentPc && candidate) {
+        if (currentPc.remoteDescription) {
           try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            await currentPc.addIceCandidate(new RTCIceCandidate(candidate));
           } catch (err) {
             console.warn('[WebRTC] ICE candidate error (non-fatal):', err.message);
           }
         } else {
           pendingCandidates.push(candidate);
         }
-      }
-    });
-
-    // ── Room error events ──────────────────────────────────────────────────────
-
-    socket.on('room-not-found', () => {
-      setStatus('invalid');
-      addToast('Room not found. Check the link or ask the sender to resend.', 'error');
-    });
-
-    socket.on('room-full', () => {
-      setStatus('full');
-      addToast('This transfer room already has a receiver.', 'error');
-    });
-
-    socket.on('peer-disconnected', () => {
-      if (status !== 'done') {
-        addToast('Sender disconnected.', 'warning');
-        setStatus('idle');
       }
     });
   };
@@ -373,9 +339,8 @@ export default function ReceivePage() {
     }
 
     return () => {
-      socketRef.current?.disconnect();
+      signaling.stopPolling();
       pcRef.current?.close();
-      socketRef.current = null;
       pcRef.current = null;
       initializedRef.current = false;
     };

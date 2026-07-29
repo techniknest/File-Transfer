@@ -3,7 +3,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import io from 'socket.io-client';
+import { useSignaling } from '@/hooks/useSignaling';
 import TransferModal from '../components/TransferModal';
 import { showToast } from '../components/Toast';
 import {
@@ -35,6 +35,7 @@ export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [view, setView] = useState('home');
+  const signaling = useSignaling();
 
   // Send state
   const [files, setFiles] = useState([]);
@@ -51,7 +52,6 @@ export default function Dashboard() {
   // Receive state
   const [receiveLink, setReceiveLink] = useState('');
 
-  const socketRef = useRef(null);
   const pcRef = useRef(null);
   const filesRef = useRef([]);
   const roomIdRef = useRef('');
@@ -59,15 +59,6 @@ export default function Dashboard() {
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
-
-  const getSocket = useCallback(() => {
-    if (!socketRef.current) {
-      socketRef.current = io(window.location.origin, {
-        transports: ['websocket', 'polling'],
-      });
-    }
-    return socketRef.current;
-  }, []);
 
   const generateRoomId = () =>
     Math.random().toString(36).substring(2, 8).toUpperCase() +
@@ -89,7 +80,7 @@ export default function Dashboard() {
   }, []);
 
   // ── STEP 2: User clicks "Generate Transfer Link" ──
-  const handleGenerateLink = useCallback(() => {
+  const handleGenerateLink = useCallback(async () => {
     if (filesRef.current.length === 0) return;
     if (roomIdRef.current) {
       // Already have a room — just open the modal again
@@ -106,14 +97,13 @@ export default function Dashboard() {
     setTransferStatus('waiting');
     setModalOpen(true);
 
-    const socket = getSocket();
-    socket.off('receiver-joined');
-    socket.off('answer');
-    socket.off('ice-candidate');
+    signaling.off('receiver-joined');
+    signaling.off('answer');
+    signaling.off('ice-candidate');
 
     const pendingCandidates = [];
 
-    socket.on('receiver-joined', async () => {
+    signaling.on('receiver-joined', async () => {
       setTransferStatus('connecting');
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -122,7 +112,7 @@ export default function Dashboard() {
 
       pc.onicecandidate = (e) => {
         if (e.candidate) {
-          socket.emit('ice-candidate', { roomId: id, candidate: e.candidate });
+          signaling.sendSignal('ice-candidate', { candidate: e.candidate });
         }
       };
 
@@ -206,14 +196,15 @@ export default function Dashboard() {
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('offer', { roomId: id, offer });
+        await signaling.sendSignal('offer', { offer });
       } catch (err) {
         console.error('Error creating offer', err);
       }
     });
 
-    socket.on('answer', async ({ answer }) => {
-      if (pcRef.current) {
+    signaling.on('answer', async (data) => {
+      const answer = data?.answer;
+      if (pcRef.current && answer) {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
         for (const candidate of pendingCandidates) {
           try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
@@ -222,7 +213,8 @@ export default function Dashboard() {
       }
     });
 
-    socket.on('ice-candidate', async ({ candidate }) => {
+    signaling.on('ice-candidate', async (data) => {
+      const candidate = data?.candidate;
       if (pcRef.current && candidate) {
         if (pcRef.current.remoteDescription) {
           try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
@@ -232,8 +224,12 @@ export default function Dashboard() {
       }
     });
 
-    socket.emit('create-room', id);
-  }, [getSocket, session]);
+    try {
+      await signaling.createRoom(id);
+    } catch (err) {
+      console.error('Failed to create room:', err);
+    }
+  }, [signaling, session]);
 
   const handleAddMoreFiles = useCallback((moreFiles) => {
     const newFiles = [...filesRef.current, ...Array.from(moreFiles)];
@@ -260,8 +256,8 @@ export default function Dashboard() {
     filesRef.current = [];
     roomIdRef.current = '';
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
-    if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; }
-  }, []);
+    signaling.stopPolling();
+  }, [signaling]);
 
   const handleGoBack = useCallback(() => {
     if (transferStatus === 'transferring') return; // block during transfer
