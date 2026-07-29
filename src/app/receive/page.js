@@ -10,6 +10,9 @@ const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -334,8 +337,10 @@ export default function ReceivePage() {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
-      setPrefilledRoomId(roomParam.toUpperCase());
-      setManualLink(window.location.origin + '/receive?room=' + roomParam);
+      const roomUpper = roomParam.toUpperCase();
+      setPrefilledRoomId(roomUpper);
+      setManualLink(window.location.origin + '/receive?room=' + roomUpper);
+      connect(roomUpper);
     }
 
     return () => {
@@ -372,9 +377,8 @@ export default function ReceivePage() {
       roomVal = roomVal.toUpperCase();
     }
     // Clean up previous connection if any
-    socketRef.current?.disconnect();
+    signaling.stopPolling();
     pcRef.current?.close();
-    socketRef.current = null;
     pcRef.current = null;
     initializedRef.current = true; // prevent useEffect re-init
     connect(roomVal);
@@ -571,7 +575,7 @@ export default function ReceivePage() {
 
                 <br />
                 <button
-                  onClick={() => { socketRef.current?.disconnect(); pcRef.current?.close(); setStatus('idle'); }}
+                  onClick={() => { signaling.stopPolling(); pcRef.current?.close(); setStatus('idle'); }}
                   style={{
                     background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: '0.75rem', padding: '0.5rem 1.25rem',
@@ -741,9 +745,8 @@ export default function ReceivePage() {
                     setReceivedFiles([]);
                     setManualLink('');
                     setStats({ progress: 0, currentFile: '', speed: 0, eta: 0, totalFiles: 0, receivedCount: 0, totalBytes: 0, receivedBytes: 0 });
-                    socketRef.current?.disconnect();
+                    signaling.stopPolling();
                     pcRef.current?.close();
-                    socketRef.current = null;
                     pcRef.current = null;
                     initializedRef.current = false;
                   }}
