@@ -92,6 +92,22 @@ export default function Dashboard() {
     }
 
     const id = generateRoomId();
+
+    // ── Create the room in MongoDB FIRST — if this fails we abort ──
+    signaling.off('receiver-joined');
+    signaling.off('answer');
+    signaling.off('ice-candidate');
+
+    try {
+      await signaling.createRoom(id);
+    } catch (err) {
+      console.error('Failed to create room:', err);
+      // Show a user-visible error rather than a broken link
+      alert(`Could not create transfer session: ${err.message}\n\nCheck that the server is running and try again.`);
+      return;
+    }
+
+    // Only after the room is confirmed in DB, show the link
     setRoomId(id);
     roomIdRef.current = id;
 
@@ -99,10 +115,6 @@ export default function Dashboard() {
     setShareLink(link);
     setTransferStatus('waiting');
     setModalOpen(true);
-
-    signaling.off('receiver-joined');
-    signaling.off('answer');
-    signaling.off('ice-candidate');
 
     const pendingCandidates = [];
 
@@ -226,12 +238,6 @@ export default function Dashboard() {
         }
       }
     });
-
-    try {
-      await signaling.createRoom(id);
-    } catch (err) {
-      console.error('Failed to create room:', err);
-    }
   }, [signaling, session]);
 
   const handleAddMoreFiles = useCallback((moreFiles) => {
