@@ -205,7 +205,13 @@ export function useSignaling() {
         }
 
         if (!res.ok || data.error) {
-          const err = new Error(data.error || 'Failed to join room');
+          let errorMsg = data.error || 'Failed to join room';
+          // Check if it's the common Vercel/MongoDB Atlas IP Whitelist error
+          if (errorMsg.includes('whitelist') || errorMsg.includes('MongoDB Atlas')) {
+            errorMsg = 'MongoDB Error: Vercel IP is blocked. Please allow all IPs (0.0.0.0/0) in your MongoDB Atlas Network Access settings.';
+          }
+          
+          const err = new Error(errorMsg);
           err.code = data.code || 'UNKNOWN';
           // Don't retry on user errors like full room or not found
           if (res.status === 404 || res.status === 400) {
