@@ -93,32 +93,18 @@ export default function Dashboard() {
 
     const id = generateRoomId();
 
-    // ── Create the room in MongoDB FIRST — if this fails we abort ──
+    // ── CRITICAL FIX: Register ALL event listeners BEFORE creating the room
+    // and starting polling. If we create the room first and polling starts
+    // immediately, a fast receiver-joined signal can arrive in the first poll
+    // before listeners are attached — silently dropped, transfer never starts.
     signaling.off('receiver-joined');
     signaling.off('answer');
     signaling.off('ice-candidate');
 
-    try {
-      await signaling.createRoom(id);
-    } catch (err) {
-      console.error('Failed to create room:', err);
-      // Show a user-visible error rather than a broken link
-      alert(`Could not create transfer session: ${err.message}\n\nCheck that the server is running and try again.`);
-      return;
-    }
-
-    // Only after the room is confirmed in DB, show the link
-    setRoomId(id);
-    roomIdRef.current = id;
-
-    const link = `${window.location.origin}/receive?room=${id}`;
-    setShareLink(link);
-    setTransferStatus('waiting');
-    setModalOpen(true);
-
     const pendingCandidates = [];
 
     signaling.on('receiver-joined', async () => {
+      console.log('[Sender] receiver-joined received — starting WebRTC');
       setTransferStatus('connecting');
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -127,8 +113,18 @@ export default function Dashboard() {
 
       pc.onicecandidate = (e) => {
         if (e.candidate) {
-          signaling.sendSignal('ice-candidate', { candidate: e.candidate });
+          // ── FIX: Delay ICE candidate sending by 200ms ──
+          // The receiver needs time to set the remote description (our offer)
+          // before it can accept ICE candidates. A brief delay prevents candidates
+          // from arriving before setRemoteDescription completes on the other side.
+          setTimeout(() => {
+            signaling.sendSignal('ice-candidate', { candidate: e.candidate });
+          }, 200);
         }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log('[Sender] WebRTC connection state:', pc.connectionState);
       };
 
       dc.onopen = async () => {
@@ -212,19 +208,26 @@ export default function Dashboard() {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         await signaling.sendSignal('offer', { offer });
+        console.log('[Sender] Offer sent');
       } catch (err) {
-        console.error('Error creating offer', err);
+        console.error('[Sender] Error creating offer:', err);
       }
     });
 
     signaling.on('answer', async (data) => {
       const answer = data?.answer;
       if (pcRef.current && answer) {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-        for (const candidate of pendingCandidates) {
-          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
+        try {
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+          console.log('[Sender] Remote description set from answer');
+          // Drain any ICE candidates that arrived before the answer
+          for (const candidate of pendingCandidates) {
+            try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
+          }
+          pendingCandidates.length = 0;
+        } catch (err) {
+          console.error('[Sender] setRemoteDescription failed:', err);
         }
-        pendingCandidates.length = 0;
       }
     });
 
@@ -238,6 +241,29 @@ export default function Dashboard() {
         }
       }
     });
+
+    // ── NOW create the room and start polling (listeners are already wired) ──
+    try {
+      await signaling.createRoom(id);
+      // Start polling AFTER createRoom confirms the room exists in DB
+      signaling.startPolling(id);
+    } catch (err) {
+      console.error('[Sender] Failed to create room:', err);
+      // Clean up listeners since we're aborting
+      signaling.off('receiver-joined');
+      signaling.off('answer');
+      signaling.off('ice-candidate');
+      alert(`Could not create transfer session: ${err.message}\n\nPlease check your connection and try again.`);
+      return;
+    }
+
+    // Only show the link after the room is confirmed in DB
+    setRoomId(id);
+    roomIdRef.current = id;
+    const link = `${window.location.origin}/receive?room=${id}`;
+    setShareLink(link);
+    setTransferStatus('waiting');
+    setModalOpen(true);
   }, [signaling, session]);
 
   const handleAddMoreFiles = useCallback((moreFiles) => {

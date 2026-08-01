@@ -3,6 +3,14 @@ import bcrypt from 'bcryptjs';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 
+// FIX: Ensure NextAuth always has the correct URL in production.
+// Vercel auto-injects VERCEL_URL (without protocol) for every deployment.
+// If NEXTAUTH_URL isn't explicitly set in the Vercel dashboard, fall back to it.
+// This prevents auth callbacks from redirecting to localhost on production.
+if (process.env.VERCEL_URL && !process.env.NEXTAUTH_URL) {
+  process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_URL}`;
+}
+
 export const authOptions = {
   providers: [
     CredentialsProvider({

@@ -4,7 +4,6 @@ const SignalSchema = new mongoose.Schema({
   roomId: {
     type: String,
     required: true,
-    index: true,
   },
   fromClientId: {
     type: String,
@@ -29,5 +28,10 @@ const SignalSchema = new mongoose.Schema({
     expires: 1800, // 30 minutes TTL
   },
 });
+
+// Compound index: the poll query filters on roomId + fromClientId + consumedBy.
+// A compound index on roomId + createdAt makes the poll both fast and ordered.
+// This is critical for Vercel serverless where every ms of DB query time matters.
+SignalSchema.index({ roomId: 1, createdAt: 1 });
 
 export default mongoose.models.Signal || mongoose.model('Signal', SignalSchema);
