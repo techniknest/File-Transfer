@@ -186,19 +186,45 @@ export function useSignaling() {
 
   const joinRoom = useCallback(async (roomId) => {
     roomIdRef.current = roomId;
-    const res = await fetch(`/api/rooms/${roomId}/join`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId: clientIdRef.current }),
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      const err = new Error(data.error || 'Failed to join room');
-      err.code = data.code;
-      throw err;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      try {
+        const res = await fetch(`/api/rooms/${roomId}/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId: clientIdRef.current }),
+        });
+        
+        let data;
+        try {
+          data = await res.json();
+        } catch (e) {
+          throw new Error('Server returned an invalid response (possible timeout).');
+        }
+
+        if (!res.ok || data.error) {
+          const err = new Error(data.error || 'Failed to join room');
+          err.code = data.code || 'UNKNOWN';
+          // Don't retry on user errors like full room or not found
+          if (res.status === 404 || res.status === 400) {
+            throw err;
+          }
+          throw err;
+        }
+
+        startPolling(roomId);
+        return data;
+      } catch (err) {
+        attempts++;
+        if (err.code === 'ROOM_FULL' || err.code === 'ROOM_NOT_FOUND' || attempts >= maxAttempts) {
+          throw err;
+        }
+        console.warn(`[Signaling] joinRoom attempt ${attempts} failed, retrying in 1s...`);
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
-    startPolling(roomId);
-    return data;
   }, [startPolling]);
 
   // Cleanup on unmount

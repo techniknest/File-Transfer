@@ -8,11 +8,19 @@ import { FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File,
 // ─── ICE / STUN / TURN servers ────────────────────────────────────────────────
 const ICE_SERVERS = {
   iceServers: [
+    // Google STUN
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
+    // Cloudflare STUN
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    // Twilio STUN
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    // Mozilla STUN
+    { urls: 'stun:stun.services.mozilla.com' },
+    // Metered TURN (Fallback)
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -128,6 +136,26 @@ export default function ReceivePage() {
   const filesRef = useRef([]);  // accumulates { name, url, size } across session
   const initializedRef = useRef(false);
 
+  // Streaming refs for Gigabyte-scale files
+  const streamRef = useRef(null);
+  const chunkQueueRef = useRef([]);
+  const isWritingRef = useRef(false);
+
+  const processQueue = async () => {
+    if (isWritingRef.current || !streamRef.current || streamRef.current === 'FALLBACK') return;
+    isWritingRef.current = true;
+    try {
+      while (chunkQueueRef.current.length > 0) {
+        const chunk = chunkQueueRef.current.shift();
+        await streamRef.current.write(chunk);
+      }
+    } catch (e) {
+      console.error('[Disk] Write error:', e);
+    } finally {
+      isWritingRef.current = false;
+    }
+  };
+
   // ── Toast helper ─────────────────────────────────────────────────────────────
   const addToast = (message, type = 'info', duration = 3500) => {
     const id = Date.now() + Math.random();
@@ -138,6 +166,7 @@ export default function ReceivePage() {
   // ── Core connection logic ─────────────────────────────────────────────────────
   const connect = async (targetRoomId) => {
     if (!targetRoomId) return;
+    setToasts([]); // Clear old toasts on new attempt
     roomIdRef.current = targetRoomId;
     setRoomId(targetRoomId);
     setStatus('connecting');
@@ -207,43 +236,78 @@ export default function ReceivePage() {
           if (msg.type === 'meta') {
             metaRef.current = msg;
             chunksRef.current = [];
+            chunkQueueRef.current = [];
+            streamRef.current = null;
+            isWritingRef.current = false;
             setStats(prev => ({ ...prev, currentFile: msg.fileName }));
             console.log('[Receive] Incoming file:', msg.fileName, formatBytes(msg.fileSize));
+
+            if ('showSaveFilePicker' in window) {
+              (async () => {
+                try {
+                  const handle = await window.showSaveFilePicker({ suggestedName: msg.fileName });
+                  streamRef.current = await handle.createWritable();
+                  addToast(`Streaming ${msg.fileName} directly to disk...`, 'info', 3000);
+                  processQueue();
+                } catch (e) {
+                  console.warn('[Disk] File picker cancelled or failed', e);
+                  streamRef.current = 'FALLBACK';
+                }
+              })();
+            } else {
+              if (msg.fileSize > 500 * 1024 * 1024) {
+                addToast('Warning: Your browser does not support disk streaming. Large files may cause a crash.', 'warning', 6000);
+              }
+              streamRef.current = 'FALLBACK';
+            }
           }
 
           if (msg.type === 'file-end') {
             const meta = metaRef.current;
             if (!meta) return;
 
-            const chunksCopy = [...chunksRef.current];
-            chunksRef.current = [];
+            if (streamRef.current && streamRef.current !== 'FALLBACK') {
+              const finishDiskWrite = async () => {
+                while (chunkQueueRef.current.length > 0 || isWritingRef.current) {
+                  await new Promise(r => setTimeout(r, 50));
+                }
+                try { await streamRef.current.close(); } catch (e) { console.warn(e); }
+                streamRef.current = null;
+                
+                const fileEntry = { name: meta.fileName, url: '#', size: meta.fileSize };
+                filesRef.current = [...filesRef.current, fileEntry];
+                setReceivedFiles([...filesRef.current]);
+                setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+                addToast(`Saved to disk: ${meta.fileName}`, 'success', 4000);
+              };
+              finishDiskWrite();
+            } else {
+              const chunksCopy = [...chunksRef.current];
+              chunksRef.current = [];
 
-            const blob = new Blob(chunksCopy, {
-              type: meta.fileType || 'application/octet-stream',
-            });
-            const url = URL.createObjectURL(blob);
-            const fileEntry = { name: meta.fileName, url, size: blob.size };
+              const blob = new Blob(chunksCopy, { type: meta.fileType || 'application/octet-stream' });
+              const url = URL.createObjectURL(blob);
+              const fileEntry = { name: meta.fileName, url, size: blob.size };
 
-            filesRef.current = [...filesRef.current, fileEntry];
-            setReceivedFiles([...filesRef.current]);
-            setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-            addToast(`Received: ${meta.fileName} — click the download button if it didn't save automatically`, 'success', 4000);
+              filesRef.current = [...filesRef.current, fileEntry];
+              setReceivedFiles([...filesRef.current]);
+              setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+              addToast(`Received: ${meta.fileName} — click the download button if it didn't save automatically`, 'success', 4000);
 
-            setTimeout(() => {
-              try {
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = meta.fileName;
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => {
-                  document.body.removeChild(a);
-                }, 2000);
-              } catch (err) {
-                console.warn('[Download] Auto-download blocked, user can use the button:', err);
-              }
-            }, 100);
+              setTimeout(() => {
+                try {
+                  const a = document.createElement('a');
+                  a.style.display = 'none';
+                  a.href = url;
+                  a.download = meta.fileName;
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(() => document.body.removeChild(a), 2000);
+                } catch (err) {
+                  console.warn('[Download] Auto-download blocked:', err);
+                }
+              }, 100);
+            }
           }
 
           if (msg.type === 'session-end') {
@@ -253,8 +317,14 @@ export default function ReceivePage() {
           }
 
         } else {
-          chunksRef.current.push(ev.data);
           trackRef.current.receivedBytes += ev.data.byteLength;
+
+          if (streamRef.current !== 'FALLBACK') {
+            chunkQueueRef.current.push(ev.data);
+            processQueue();
+          } else {
+            chunksRef.current.push(ev.data);
+          }
 
           const now = Date.now();
           const elapsed = (now - trackRef.current.lastTime) / 1000;
@@ -347,7 +417,9 @@ export default function ReceivePage() {
       signaling.stopPolling();
       pcRef.current?.close();
       pcRef.current = null;
-      initializedRef.current = false;
+      // Do not reset initializedRef to false here.
+      // This prevents React 18 StrictMode from re-triggering the connection
+      // on its development double-mount cycle.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
