@@ -6,11 +6,18 @@ import Signal from '@/models/Signal';
 export async function POST(request, { params }) {
   try {
     await connectDB();
-    const { roomId } = await params;
-    const { clientId } = await request.json();
+    const resolvedParams = await params;
+    const rawRoomId = resolvedParams?.roomId;
+    const roomId = rawRoomId ? rawRoomId.trim().toUpperCase() : '';
+    const body = await request.json().catch(() => ({}));
+    const clientId = body?.clientId;
 
     if (!clientId) {
       return NextResponse.json({ error: 'clientId is required' }, { status: 400 });
+    }
+
+    if (!roomId) {
+      return NextResponse.json({ error: 'roomId is required' }, { status: 400 });
     }
 
     const room = await Room.findOne({ roomId });
@@ -37,6 +44,7 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ success: true, room });
   } catch (error) {
+    console.error('[API /rooms/[roomId]/join] Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

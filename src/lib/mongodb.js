@@ -11,24 +11,23 @@ async function connectDB() {
   const MONGODB_URI = process.env.MONGODB_URI;
 
   if (!MONGODB_URI) {
-    throw new Error('Please define the MONGODB_URI environment variable');
+    throw new Error(
+      'MONGODB_URI is not defined in environment variables. Please add MONGODB_URI in your Vercel Project Settings.'
+    );
   }
 
-  // Return existing connection if available
-  if (cached.conn) {
+  // Check if mongoose already has an active, live connection (readyState: 1 = connected)
+  if (cached.conn && mongoose.connection.readyState === 1) {
     return cached.conn;
   }
 
-  // Create connection promise if not already in progress
-  if (!cached.promise) {
+  // If connection is dropped or disconnected (readyState 0 or 3), recreate promise
+  if (!cached.promise || mongoose.connection.readyState === 0 || mongoose.connection.readyState === 3) {
     const opts = {
-      // Serverless-optimised: don't wait 30s, fail fast and let the client retry
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 8000,
       connectTimeoutMS: 10000,
       socketTimeoutMS: 45000,
-      // Prevent Mongoose from buffering commands when disconnected
       bufferCommands: false,
-      // Keep connection pool small for serverless
       maxPoolSize: 10,
       minPoolSize: 0,
     };
@@ -39,15 +38,27 @@ async function connectDB() {
   try {
     cached.conn = await cached.promise;
   } catch (error) {
-    // Reset so the next request can try again
     cached.promise = null;
+    cached.conn = null;
     console.error('[MongoDB] Connection error:', error.message);
+
+    if (
+      error.message?.includes('whitelist') ||
+      error.message?.includes('ServerSelectionError') ||
+      error.message?.includes('ETIMEDOUT') ||
+      error.message?.includes('buffering timed out') ||
+      error.message?.includes('querySrv ETIMEOUT')
+    ) {
+      throw new Error(
+        'MongoDB Atlas connection failed. Please ensure IP Access List in MongoDB Atlas Network Access allows all IPs (0.0.0.0/0) for Vercel serverless deployments.'
+      );
+    }
     throw error;
   }
 
-  // Fire-and-forget seed — does NOT block the login/auth response
+  // Fire-and-forget seed — does NOT block the response
   if (!cached.seeded) {
-    cached.seeded = true; // set immediately so parallel requests don't double-seed
+    cached.seeded = true;
     autoSeedAdmin().catch((e) =>
       console.error('[Auto-Seed] Failed:', e.message)
     );
@@ -69,7 +80,6 @@ async function autoSeedAdmin() {
       const adminName = process.env.ADMIN_NAME || 'Admin';
 
       if (adminEmail && adminPassword) {
-        // 10 rounds: still secure, ~3× faster than 12 on serverless CPUs
         const hashedPassword = await bcrypt.hash(adminPassword, 10);
         await User.create({
           name: adminName,

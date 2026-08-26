@@ -79,6 +79,7 @@ export default function ReceivePage() {
   const [prefilledRoomId, setPrefilledRoomId] = useState('');
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [toasts, setToasts] = useState([]);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const signaling = useSignaling();
   const { createAnswerWithIce, close: closeWebRTC } = useWebRTC();
@@ -320,6 +321,8 @@ export default function ReceivePage() {
       setStatus('waiting');
       addToast('Connected! Waiting for sender to begin...', 'info');
     } catch (err) {
+      const msg = err.message || 'Could not connect to room. Please try again.';
+      setErrorMessage(msg);
       if (err.code === 'ROOM_NOT_FOUND') {
         setStatus('invalid');
         addToast('Room not found. Check the link or ask the sender to resend.', 'error');
@@ -328,7 +331,7 @@ export default function ReceivePage() {
         addToast('This transfer room already has a receiver.', 'error');
       } else {
         setStatus('error');
-        addToast(err.message || 'Could not connect to room. Please try again.', 'error');
+        addToast(msg, 'error', 6000);
       }
     }
   }, [signaling, createAnswerWithIce, handleSetupDataChannel, addToast]);
@@ -740,18 +743,19 @@ export default function ReceivePage() {
                 <h2 style={{ color: '#ef4444', fontWeight: 800, fontSize: '1.25rem', marginBottom: '0.5rem' }}>
                   {status === 'invalid' ? 'Room Not Found' : status === 'full' ? 'Room Is Full' : 'Connection Failed'}
                 </h2>
-                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
                   {status === 'invalid'
                     ? 'The transfer session has expired or the link is incorrect.'
                     : status === 'full'
                     ? 'Another receiver is already connected to this transfer session.'
-                    : 'Could not establish connection. Please check your network and try again.'}
+                    : errorMessage || 'Could not establish connection. Please check your network and try again.'}
                 </p>
                 <button
                   onClick={() => {
                     setStatus('idle');
                     setPrefilledRoomId('');
                     setManualLink('');
+                    setErrorMessage('');
                   }}
                   style={{
                     background: 'rgba(255,255,255,0.1)',
