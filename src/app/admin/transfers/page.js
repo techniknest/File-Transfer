@@ -217,17 +217,17 @@ export default function AdminTransfersPage() {
           {/* Charts Row 1 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
             {/* Weekly Activity Chart */}
-            <div className="glass-card" style={{ padding: '1.5rem' }}>
+            <div className="glass-card" style={{ padding: '1.5rem', minWidth: 0 }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '1.5rem' }}>
                 Weekly File Transfers Count & Volume
               </h3>
-              <div style={{ width: '100%', height: 260 }}>
+              <div style={{ width: '100%', height: 260, minWidth: 0 }}>
                 {weeklyData.length === 0 ? (
                   <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                     No weekly data recorded yet
                   </div>
                 ) : (
-                  <ResponsiveContainer>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <BarChart data={weeklyData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" />
                       <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={11} />
@@ -243,17 +243,17 @@ export default function AdminTransfersPage() {
             </div>
 
             {/* Session Status Pie Chart */}
-            <div className="glass-card" style={{ padding: '1.5rem', maxWidth: '400px', margin: '0 auto', width: '100%' }}>
+            <div className="glass-card" style={{ padding: '1.5rem', maxWidth: '400px', margin: '0 auto', width: '100%', minWidth: 0 }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '1.5rem', textAlign: 'center' }}>
                 Transfer Status Breakdown
               </h3>
-              <div style={{ width: '100%', height: 200, position: 'relative' }}>
+              <div style={{ width: '100%', height: 200, minWidth: 0, position: 'relative' }}>
                 {pieData.length === 0 ? (
                   <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                     No transfer status data
                   </div>
                 ) : (
-                  <ResponsiveContainer>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
                         data={pieData}
@@ -285,17 +285,17 @@ export default function AdminTransfersPage() {
           </div>
 
           {/* Hourly Traffic Chart */}
-          <div className="glass-card" style={{ padding: '1.5rem' }}>
+          <div className="glass-card" style={{ padding: '1.5rem', minWidth: 0 }}>
             <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '1.5rem' }}>
               Daily Hourly Sharing Activity (MB)
             </h3>
-            <div style={{ width: '100%', height: 250 }}>
+            <div style={{ width: '100%', height: 250, minWidth: 0 }}>
               {dailyData.length === 0 ? (
                 <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                   No traffic recorded today
                 </div>
               ) : (
-                <ResponsiveContainer>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <AreaChart data={dailyData}>
                     <defs>
                       <linearGradient id="colorBytes" x1="0" y1="0" x2="0" y2="1">

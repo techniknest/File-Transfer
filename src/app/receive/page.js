@@ -1,45 +1,14 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSignaling } from '@/hooks/useSignaling';
+import { useWebRTC } from '@/hooks/useWebRTC';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File, Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info, Ban, Hourglass } from 'lucide-react';
+import {
+  FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File,
+  Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info
+} from 'lucide-react';
 
-// ─── ICE / STUN / TURN servers ────────────────────────────────────────────────
-const ICE_SERVERS = {
-  iceServers: [
-    // Google STUN
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // Cloudflare STUN
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    // Twilio STUN
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    // Mozilla STUN
-    { urls: 'stun:stun.services.mozilla.com' },
-    // Metered TURN (Fallback)
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ],
-};
-
-// ─── Helpers ───────────────────────────────────────────────────────────────────
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
@@ -68,7 +37,6 @@ function getFileIcon(fileName) {
   return map[ext] || <File />;
 }
 
-// ─── Toast Component ───────────────────────────────────────────────────────────
 function Toast({ toasts }) {
   return (
     <div style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: '320px' }}>
@@ -91,7 +59,6 @@ function Toast({ toasts }) {
   );
 }
 
-// ─── Animated Spinner ──────────────────────────────────────────────────────────
 function Spinner({ color = '#10b981', size = 48, thickness = 3 }) {
   return (
     <div style={{
@@ -105,17 +72,17 @@ function Spinner({ color = '#10b981', size = 48, thickness = 3 }) {
   );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
 export default function ReceivePage() {
-  const [status, setStatus] = useState('idle');  // idle | connecting | waiting | receiving | done | invalid | expired | full | error
+  const [status, setStatus] = useState('idle'); // idle | connecting | waiting | receiving | done | invalid | full | error
   const [roomId, setRoomId] = useState('');
   const [manualLink, setManualLink] = useState('');
   const [prefilledRoomId, setPrefilledRoomId] = useState('');
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [toasts, setToasts] = useState([]);
-  const signaling = useSignaling();
 
-  // Transfer stats
+  const signaling = useSignaling();
+  const { createAnswerWithIce, close: closeWebRTC } = useWebRTC();
+
   const [stats, setStats] = useState({
     progress: 0,
     currentFile: '',
@@ -127,16 +94,14 @@ export default function ReceivePage() {
     receivedBytes: 0,
   });
 
-  // Refs — all mutable state kept out of React for the WebRTC data channel callbacks
-  const pcRef = useRef(null);
   const chunksRef = useRef([]);
   const metaRef = useRef(null);
   const roomIdRef = useRef('');
   const trackRef = useRef({ totalBytes: 0, receivedBytes: 0, lastTime: Date.now(), lastBytes: 0 });
-  const filesRef = useRef([]);  // accumulates { name, url, size } across session
+  const filesRef = useRef([]);
   const initializedRef = useRef(false);
 
-  // Streaming refs for Gigabyte-scale files
+  // Streaming refs for disk writing
   const streamRef = useRef(null);
   const chunkQueueRef = useRef([]);
   const isWritingRef = useRef(false);
@@ -156,26 +121,199 @@ export default function ReceivePage() {
     }
   };
 
-  // ── Toast helper ─────────────────────────────────────────────────────────────
-  const addToast = (message, type = 'info', duration = 3500) => {
+  const addToast = useCallback((message, type = 'info', duration = 3500) => {
     const id = Date.now() + Math.random();
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
-  };
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), duration);
+  }, []);
 
-  // ── Core connection logic ─────────────────────────────────────────────────────
-  const connect = async (targetRoomId) => {
+  const handleSetupDataChannel = useCallback((dc) => {
+    dc.binaryType = 'arraybuffer';
+    console.log('[WebRTC] DataChannel connected:', dc.label);
+    setStatus('receiving');
+    addToast('Transfer started!', 'success');
+
+    dc.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        let msg;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch {
+          return;
+        }
+
+        if (msg.type === 'session-info') {
+          trackRef.current.totalBytes = msg.totalBytes || 0;
+          setStats((prev) => ({
+            ...prev,
+            totalFiles: msg.totalFiles || 0,
+            totalBytes: msg.totalBytes || 0,
+          }));
+        }
+
+        if (msg.type === 'meta') {
+          metaRef.current = msg;
+          chunksRef.current = [];
+          chunkQueueRef.current = [];
+          streamRef.current = null;
+          isWritingRef.current = false;
+          setStats((prev) => ({ ...prev, currentFile: msg.fileName }));
+
+          if ('showSaveFilePicker' in window) {
+            (async () => {
+              try {
+                const handle = await window.showSaveFilePicker({ suggestedName: msg.fileName });
+                streamRef.current = await handle.createWritable();
+                addToast(`Streaming ${msg.fileName} directly to disk...`, 'info', 3000);
+                processQueue();
+              } catch (e) {
+                console.warn('[Disk] File picker cancelled or failed', e);
+                streamRef.current = 'FALLBACK';
+              }
+            })();
+          } else {
+            if (msg.fileSize > 500 * 1024 * 1024) {
+              addToast('Note: Browser will assemble file in memory before saving.', 'info', 4000);
+            }
+            streamRef.current = 'FALLBACK';
+          }
+        }
+
+        if (msg.type === 'file-end') {
+          const meta = metaRef.current;
+          if (!meta) return;
+
+          if (streamRef.current && streamRef.current !== 'FALLBACK') {
+            const finishDiskWrite = async () => {
+              while (chunkQueueRef.current.length > 0 || isWritingRef.current) {
+                await new Promise((r) => setTimeout(r, 40));
+              }
+              try {
+                await streamRef.current.close();
+              } catch (e) {
+                console.warn(e);
+              }
+              streamRef.current = null;
+
+              const fileEntry = { name: meta.fileName, url: '#', size: meta.fileSize };
+              filesRef.current = [...filesRef.current, fileEntry];
+              setReceivedFiles([...filesRef.current]);
+              setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+              addToast(`Saved to disk: ${meta.fileName}`, 'success', 4000);
+            };
+            finishDiskWrite();
+          } else {
+            const chunksCopy = [...chunksRef.current];
+            chunksRef.current = [];
+
+            const blob = new Blob(chunksCopy, { type: meta.fileType || 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const fileEntry = { name: meta.fileName, url, size: blob.size };
+
+            filesRef.current = [...filesRef.current, fileEntry];
+            setReceivedFiles([...filesRef.current]);
+            setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+            addToast(`Received: ${meta.fileName}`, 'success', 4000);
+
+            // Trigger browser download
+            setTimeout(() => {
+              try {
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = meta.fileName;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => document.body.removeChild(a), 2000);
+              } catch (err) {
+                console.warn('[Download] Auto-download blocked:', err);
+              }
+            }, 100);
+          }
+        }
+
+        if (msg.type === 'session-end') {
+          setStatus('done');
+          setStats((prev) => ({ ...prev, progress: 100 }));
+          addToast('All files received! Check your Downloads folder.', 'success', 6000);
+          signaling.stopPolling();
+        }
+      } else {
+        // Binary ArrayBuffer chunk
+        trackRef.current.receivedBytes += ev.data.byteLength;
+
+        if (streamRef.current !== 'FALLBACK') {
+          chunkQueueRef.current.push(ev.data);
+          processQueue();
+        } else {
+          chunksRef.current.push(ev.data);
+        }
+
+        const now = Date.now();
+        const elapsed = (now - trackRef.current.lastTime) / 1000;
+        if (elapsed >= 0.2) {
+          const delta = trackRef.current.receivedBytes - trackRef.current.lastBytes;
+          const speed = delta / elapsed;
+          const remaining = trackRef.current.totalBytes - trackRef.current.receivedBytes;
+          const eta = speed > 0 ? remaining / speed : 0;
+          const progress =
+            trackRef.current.totalBytes > 0
+              ? Math.min((trackRef.current.receivedBytes / trackRef.current.totalBytes) * 100, 99.9)
+              : 0;
+
+          trackRef.current.lastTime = now;
+          trackRef.current.lastBytes = trackRef.current.receivedBytes;
+
+          setStats((prev) => ({ ...prev, progress, speed, eta }));
+        }
+      }
+    };
+
+    dc.onerror = (err) => {
+      console.error('[DataChannel] Error:', err);
+    };
+  }, [addToast, signaling]);
+
+  const connect = useCallback(async (targetRoomId) => {
     if (!targetRoomId) return;
-    setToasts([]); // Clear old toasts on new attempt
+    setToasts([]);
     roomIdRef.current = targetRoomId;
     setRoomId(targetRoomId);
     setStatus('connecting');
 
-    // Reset tracking
     trackRef.current = { totalBytes: 0, receivedBytes: 0, lastTime: Date.now(), lastBytes: 0 };
     filesRef.current = [];
     chunksRef.current = [];
     metaRef.current = null;
+
+    signaling.off('offer');
+
+    signaling.on('offer', async (data) => {
+      const offer = data?.offer;
+      if (!offer) return;
+      console.log('[Receiver] Atomic Offer received — generating atomic Answer with ICE candidates');
+
+      try {
+        const { answer } = await createAnswerWithIce(offer, {
+          onConnectionStateChange: (state) => {
+            console.log('[Receiver] WebRTC Connection State:', state);
+            if (state === 'connected') {
+              console.log('[Receiver] Direct P2P tunnel established!');
+            }
+          },
+          onDataChannel: (dc) => {
+            handleSetupDataChannel(dc);
+          },
+        });
+
+        // Send 1 single atomic Answer (containing all STUN/TURN candidates)
+        await signaling.sendSignal('answer', { answer });
+        console.log('[Receiver] 1-shot atomic Answer sent');
+      } catch (err) {
+        console.error('[Receiver] Failed to handle offer:', err);
+        addToast('WebRTC negotiation failed.', 'error');
+      }
+    });
 
     try {
       await signaling.joinRoom(targetRoomId);
@@ -192,214 +330,9 @@ export default function ReceivePage() {
         setStatus('error');
         addToast(err.message || 'Could not connect to room. Please try again.', 'error');
       }
-      return;
     }
+  }, [signaling, createAnswerWithIce, handleSetupDataChannel, addToast]);
 
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    pcRef.current = pc;
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        signaling.sendSignal('ice-candidate', { candidate: e.candidate });
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      console.log('[WebRTC] Connection state:', pc.connectionState);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        addToast('P2P connection lost. The sender may have disconnected.', 'warning');
-      }
-    };
-
-    // ── DataChannel handler ────────────────────────────────────────────────
-    pc.ondatachannel = (e) => {
-      const dc = e.channel;
-      dc.binaryType = 'arraybuffer';
-      console.log('[WebRTC] DataChannel received:', dc.label);
-      setStatus('receiving');
-      addToast('Transfer started!', 'success');
-
-      dc.onmessage = (ev) => {
-        if (typeof ev.data === 'string') {
-          let msg;
-          try { msg = JSON.parse(ev.data); } catch { return; }
-
-          if (msg.type === 'session-info') {
-            trackRef.current.totalBytes = msg.totalBytes || 0;
-            setStats(prev => ({
-              ...prev,
-              totalFiles: msg.totalFiles || 0,
-              totalBytes: msg.totalBytes || 0,
-            }));
-          }
-
-          if (msg.type === 'meta') {
-            metaRef.current = msg;
-            chunksRef.current = [];
-            chunkQueueRef.current = [];
-            streamRef.current = null;
-            isWritingRef.current = false;
-            setStats(prev => ({ ...prev, currentFile: msg.fileName }));
-            console.log('[Receive] Incoming file:', msg.fileName, formatBytes(msg.fileSize));
-
-            if ('showSaveFilePicker' in window) {
-              (async () => {
-                try {
-                  const handle = await window.showSaveFilePicker({ suggestedName: msg.fileName });
-                  streamRef.current = await handle.createWritable();
-                  addToast(`Streaming ${msg.fileName} directly to disk...`, 'info', 3000);
-                  processQueue();
-                } catch (e) {
-                  console.warn('[Disk] File picker cancelled or failed', e);
-                  streamRef.current = 'FALLBACK';
-                }
-              })();
-            } else {
-              if (msg.fileSize > 500 * 1024 * 1024) {
-                addToast('Warning: Your browser does not support disk streaming. Large files may cause a crash.', 'warning', 6000);
-              }
-              streamRef.current = 'FALLBACK';
-            }
-          }
-
-          if (msg.type === 'file-end') {
-            const meta = metaRef.current;
-            if (!meta) return;
-
-            if (streamRef.current && streamRef.current !== 'FALLBACK') {
-              const finishDiskWrite = async () => {
-                while (chunkQueueRef.current.length > 0 || isWritingRef.current) {
-                  await new Promise(r => setTimeout(r, 50));
-                }
-                try { await streamRef.current.close(); } catch (e) { console.warn(e); }
-                streamRef.current = null;
-                
-                const fileEntry = { name: meta.fileName, url: '#', size: meta.fileSize };
-                filesRef.current = [...filesRef.current, fileEntry];
-                setReceivedFiles([...filesRef.current]);
-                setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-                addToast(`Saved to disk: ${meta.fileName}`, 'success', 4000);
-              };
-              finishDiskWrite();
-            } else {
-              const chunksCopy = [...chunksRef.current];
-              chunksRef.current = [];
-
-              const blob = new Blob(chunksCopy, { type: meta.fileType || 'application/octet-stream' });
-              const url = URL.createObjectURL(blob);
-              const fileEntry = { name: meta.fileName, url, size: blob.size };
-
-              filesRef.current = [...filesRef.current, fileEntry];
-              setReceivedFiles([...filesRef.current]);
-              setStats(prev => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-              addToast(`Received: ${meta.fileName} — click the download button if it didn't save automatically`, 'success', 4000);
-
-              setTimeout(() => {
-                try {
-                  const a = document.createElement('a');
-                  a.style.display = 'none';
-                  a.href = url;
-                  a.download = meta.fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  setTimeout(() => document.body.removeChild(a), 2000);
-                } catch (err) {
-                  console.warn('[Download] Auto-download blocked:', err);
-                }
-              }, 100);
-            }
-          }
-
-          if (msg.type === 'session-end') {
-            setStatus('done');
-            setStats(prev => ({ ...prev, progress: 100 }));
-            addToast('All files received! Check your Downloads folder.', 'success', 6000);
-          }
-
-        } else {
-          trackRef.current.receivedBytes += ev.data.byteLength;
-
-          if (streamRef.current !== 'FALLBACK') {
-            chunkQueueRef.current.push(ev.data);
-            processQueue();
-          } else {
-            chunksRef.current.push(ev.data);
-          }
-
-          const now = Date.now();
-          const elapsed = (now - trackRef.current.lastTime) / 1000;
-          if (elapsed >= 0.2) {
-            const delta = trackRef.current.receivedBytes - trackRef.current.lastBytes;
-            const speed = delta / elapsed;
-            const remaining = trackRef.current.totalBytes - trackRef.current.receivedBytes;
-            const eta = speed > 0 ? remaining / speed : 0;
-            const progress = trackRef.current.totalBytes > 0
-              ? Math.min((trackRef.current.receivedBytes / trackRef.current.totalBytes) * 100, 99.9)
-              : 0;
-
-            trackRef.current.lastTime = now;
-            trackRef.current.lastBytes = trackRef.current.receivedBytes;
-
-            setStats(prev => ({ ...prev, progress, speed, eta }));
-          }
-        }
-      };
-
-      dc.onerror = (err) => {
-        console.error('[DataChannel] Error:', err);
-        addToast('Data channel error. Transfer may have failed.', 'error');
-      };
-
-      dc.onclose = () => {
-        console.log('[DataChannel] Closed');
-      };
-    };
-
-    const pendingCandidates = [];
-
-    signaling.off('offer');
-    signaling.off('ice-candidate');
-
-    signaling.on('offer', async (data) => {
-      const offer = data?.offer;
-      const currentPc = pcRef.current;
-      if (!currentPc || !offer) return;
-
-      try {
-        await currentPc.setRemoteDescription(new RTCSessionDescription(offer));
-        for (const candidate of pendingCandidates) {
-          try { await currentPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.warn(e); }
-        }
-        pendingCandidates.length = 0;
-
-        const answer = await currentPc.createAnswer();
-        await currentPc.setLocalDescription(answer);
-        await signaling.sendSignal('answer', { answer });
-        console.log('[WebRTC] Answer sent');
-      } catch (err) {
-        console.error('[WebRTC] Error handling offer:', err);
-        addToast('WebRTC negotiation failed.', 'error');
-      }
-    });
-
-    signaling.on('ice-candidate', async (data) => {
-      const candidate = data?.candidate;
-      const currentPc = pcRef.current;
-      if (currentPc && candidate) {
-        if (currentPc.remoteDescription) {
-          try {
-            await currentPc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch (err) {
-            console.warn('[WebRTC] ICE candidate error (non-fatal):', err.message);
-          }
-        } else {
-          pendingCandidates.push(candidate);
-        }
-      }
-    });
-  };
-
-  // ── Auto-connect when URL has ?room= param ────────────────────────────────────
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
@@ -415,16 +348,10 @@ export default function ReceivePage() {
 
     return () => {
       signaling.stopPolling();
-      pcRef.current?.close();
-      pcRef.current = null;
-      // Do not reset initializedRef to false here.
-      // This prevents React 18 StrictMode from re-triggering the connection
-      // on its development double-mount cycle.
+      closeWebRTC();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [connect, signaling, closeWebRTC]);
 
-  // ── Block accidental close during transfer ─────────────────────────────────
   useEffect(() => {
     if (status !== 'receiving') return;
     const handler = (e) => {
@@ -436,7 +363,6 @@ export default function ReceivePage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [status]);
 
-  // ── Manual link submit ─────────────────────────────────────────────────────
   const handleManualSubmit = (e) => {
     e.preventDefault();
     if (!manualLink.trim()) return;
@@ -445,20 +371,14 @@ export default function ReceivePage() {
       const url = new URL(roomVal);
       roomVal = url.searchParams.get('room') || roomVal;
     } catch {
-      // raw room code pasted — use as-is (uppercased)
       roomVal = roomVal.toUpperCase();
     }
-    // Clean up previous connection if any
     signaling.stopPolling();
-    pcRef.current?.close();
-    pcRef.current = null;
-    initializedRef.current = true; // prevent useEffect re-init
+    closeWebRTC();
+    initializedRef.current = true;
     connect(roomVal);
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  RENDER
-  // ═══════════════════════════════════════════════════════════════════════════
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'linear-gradient(135deg, #0a0a1a 0%, #0f1225 50%, #0a0a1a 100%)' }}>
       <Navbar />
@@ -466,8 +386,6 @@ export default function ReceivePage() {
 
       <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '100px 1.5rem 60px' }}>
         <div style={{ width: '100%', maxWidth: '520px' }}>
-
-          {/* ── Card ── */}
           <div style={{
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid rgba(255,255,255,0.1)',
@@ -476,7 +394,6 @@ export default function ReceivePage() {
             backdropFilter: 'blur(24px)',
             boxShadow: '0 32px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
           }}>
-
             {/* Brand badge */}
             <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
               <div style={{
@@ -607,7 +524,6 @@ export default function ReceivePage() {
             {/* ──────────── WAITING state ──────────── */}
             {status === 'waiting' && (
               <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-                {/* Pulsing ring animation */}
                 <div style={{ position: 'relative', width: 80, height: 80, margin: '0 auto 1.5rem' }}>
                   <div style={{
                     position: 'absolute', inset: 0, borderRadius: '50%',
@@ -631,28 +547,26 @@ export default function ReceivePage() {
                 </h2>
                 <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.875rem', marginBottom: '1.75rem' }}>
                   Connected to room <code style={{ color: '#10b981', fontWeight: 600 }}>{roomId}</code>
-                  <br />Waiting for the sender to start the transfer…
+                  <br />Waiting for the sender to transmit files…
                 </p>
 
-                {/* Room code pill */}
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                   background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
                   borderRadius: '999px', padding: '0.4rem 1rem',
                   color: '#10b981', fontSize: '0.8rem', fontWeight: 600, marginBottom: '1.5rem',
                 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'blink 1.2s ease infinite' }} />
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
                   LIVE · Room {roomId}
                 </div>
 
                 <br />
                 <button
-                  onClick={() => { signaling.stopPolling(); pcRef.current?.close(); setStatus('idle'); }}
+                  onClick={() => { signaling.stopPolling(); closeWebRTC(); setStatus('idle'); }}
                   style={{
                     background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: '0.75rem', padding: '0.5rem 1.25rem',
                     color: '#ef4444', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
-                    transition: 'all 0.2s',
                   }}
                 >
                   Cancel
@@ -667,7 +581,6 @@ export default function ReceivePage() {
                   Receiving Files…
                 </h2>
 
-                {/* Stats grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem', marginBottom: '1.25rem' }}>
                   {[
                     { label: 'Speed', value: `${formatBytes(stats.speed)}/s` },
@@ -687,7 +600,6 @@ export default function ReceivePage() {
                   ))}
                 </div>
 
-                {/* Current file */}
                 {stats.currentFile && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: '0.75rem',
@@ -705,7 +617,6 @@ export default function ReceivePage() {
                   </div>
                 )}
 
-                {/* Progress bar with glow */}
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={{
                     background: 'rgba(255,255,255,0.07)',
@@ -719,15 +630,7 @@ export default function ReceivePage() {
                       transition: 'width 0.3s ease',
                       boxShadow: '0 0 12px rgba(16,185,129,0.6)',
                       position: 'relative',
-                    }}>
-                      {/* Shimmer */}
-                      <div style={{
-                        position: 'absolute', inset: 0,
-                        background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.25) 50%, transparent 100%)',
-                        animation: 'shimmer 1.4s ease infinite',
-                        backgroundSize: '200% 100%',
-                      }} />
-                    </div>
+                    }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem' }}>
                     <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)' }}>
@@ -739,7 +642,6 @@ export default function ReceivePage() {
                   </div>
                 </div>
 
-                {/* Do not close warning */}
                 <div style={{
                   display: 'flex', alignItems: 'flex-start', gap: '0.625rem',
                   background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
@@ -756,8 +658,9 @@ export default function ReceivePage() {
             {/* ──────────── DONE state ──────────── */}
             {status === 'done' && (
               <div style={{ textAlign: 'center' }}>
-                {/* Celebration emoji */}
-                <div style={{ marginBottom: '0.5rem', animation: 'celebrate 0.5s ease', display: 'flex', justifyContent: 'center' }}><CheckCircle size={64} className="text-emerald-500" /></div>
+                <div style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'center' }}>
+                  <CheckCircle size={64} className="text-emerald-500" />
+                </div>
                 <h2 style={{ color: '#10b981', fontWeight: 800, fontSize: '1.4rem', marginBottom: '0.4rem' }}>
                   All Files Received!
                 </h2>
@@ -765,7 +668,6 @@ export default function ReceivePage() {
                   {receivedFiles.length} {receivedFiles.length === 1 ? 'file was' : 'files were'} downloaded to your device.
                 </p>
 
-                {/* File list */}
                 {receivedFiles.length > 0 && (
                   <div style={{
                     background: 'rgba(255,255,255,0.03)',
@@ -780,11 +682,7 @@ export default function ReceivePage() {
                         padding: '0.625rem 0.75rem',
                         borderBottom: idx < receivedFiles.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
                         borderRadius: '0.625rem',
-                        transition: 'background 0.15s',
-                      }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
+                      }}>
                         <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{getFileIcon(file.name)}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '0.85rem', color: 'white', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -794,18 +692,21 @@ export default function ReceivePage() {
                             {formatBytes(file.size)}
                           </div>
                         </div>
-                        <a
-                          href={file.url}
-                          download={file.name}
-                          style={{
-                            background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)',
-                            borderRadius: '0.5rem', padding: '0.3rem 0.7rem',
-                            color: '#10b981', fontSize: '0.75rem', fontWeight: 700,
-                            textDecoration: 'none', flexShrink: 0, transition: 'all 0.2s',
-                          }}
-                        >
-                          <div className="flex items-center gap-1"><Download size={14} /> Save</div>
-                        </a>
+                        {file.url !== '#' && (
+                          <a
+                            href={file.url}
+                            download={file.name}
+                            style={{
+                              background: 'rgba(16,185,129,0.15)',
+                              border: '1px solid rgba(16,185,129,0.3)',
+                              borderRadius: '0.5rem', padding: '0.35rem 0.65rem',
+                              color: '#10b981', fontSize: '0.75rem', fontWeight: 700,
+                              textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem',
+                            }}
+                          >
+                            <Download size={13} /> Save
+                          </a>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -813,84 +714,61 @@ export default function ReceivePage() {
 
                 <button
                   onClick={() => {
-                    setStatus('idle');
                     setReceivedFiles([]);
+                    setStatus('idle');
+                    setPrefilledRoomId('');
                     setManualLink('');
-                    setStats({ progress: 0, currentFile: '', speed: 0, eta: 0, totalFiles: 0, receivedCount: 0, totalBytes: 0, receivedBytes: 0 });
-                    signaling.stopPolling();
-                    pcRef.current?.close();
-                    pcRef.current = null;
-                    initializedRef.current = false;
                   }}
                   style={{
-                    width: '100%', padding: '0.875rem',
-                    background: 'rgba(255,255,255,0.07)',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '0.875rem', color: 'white',
-                    fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
-                    transition: 'all 0.2s',
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '0.75rem', padding: '0.75rem 1.5rem',
+                    color: 'white', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
                   }}
-                  onMouseEnter={e => e.target.style.background = 'rgba(255,255,255,0.11)'}
-                  onMouseLeave={e => e.target.style.background = 'rgba(255,255,255,0.07)'}
                 >
-                  <div className="flex items-center justify-center gap-2"><Download size={20} /> Receive More Files</div>
+                  Receive Another File
                 </button>
               </div>
             )}
 
-            {/* ──────────── ERROR states ──────────── */}
-            {(status === 'invalid' || status === 'full' || status === 'error' || status === 'expired') && (
-              <div style={{ textAlign: 'center', padding: '0.5rem 0' }}>
+            {/* Error & Invalid States */}
+            {(status === 'invalid' || status === 'full' || status === 'error') && (
+              <div style={{ textAlign: 'center', padding: '1rem 0' }}>
                 <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
-                  {status === 'full' ? <Ban size={64} className="text-red-500" /> : status === 'expired' ? <Hourglass size={64} className="text-yellow-500" /> : <XCircle size={64} className="text-red-500" />}
+                  <XCircle size={56} className="text-red-500" />
                 </div>
-                <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.25rem', marginBottom: '0.5rem' }}>
-                  {status === 'invalid' && 'Room Not Found'}
-                  {status === 'full' && 'Room Full'}
-                  {status === 'expired' && 'Session Expired'}
-                  {status === 'error' && 'Connection Error'}
+                <h2 style={{ color: '#ef4444', fontWeight: 800, fontSize: '1.25rem', marginBottom: '0.5rem' }}>
+                  {status === 'invalid' ? 'Room Not Found' : status === 'full' ? 'Room Is Full' : 'Connection Failed'}
                 </h2>
-                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.875rem', marginBottom: '2rem', lineHeight: 1.6 }}>
-                  {status === 'invalid' && 'This transfer session does not exist. The link may be wrong or the room was closed.'}
-                  {status === 'full' && 'Another receiver is already connected to this room.'}
-                  {status === 'expired' && 'The transfer link has expired. Ask the sender to create a new one.'}
-                  {status === 'error' && 'Could not connect to the server. Check your internet and try again.'}
+                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+                  {status === 'invalid'
+                    ? 'The transfer session has expired or the link is incorrect.'
+                    : status === 'full'
+                    ? 'Another receiver is already connected to this transfer session.'
+                    : 'Could not establish connection. Please check your network and try again.'}
                 </p>
                 <button
-                  onClick={() => { setStatus('idle'); setManualLink(''); initializedRef.current = false; }}
+                  onClick={() => {
+                    setStatus('idle');
+                    setPrefilledRoomId('');
+                    setManualLink('');
+                  }}
                   style={{
-                    width: '100%', padding: '0.875rem',
-                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                    border: 'none', borderRadius: '0.875rem',
-                    color: 'white', fontSize: '0.9rem', fontWeight: 700,
-                    cursor: 'pointer', transition: 'all 0.2s',
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '0.75rem', padding: '0.75rem 1.5rem',
+                    color: 'white', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
                   }}
                 >
-                  Try Again
+                  Try Another Room
                 </button>
               </div>
             )}
-
-          </div>{/* end card */}
-
-          {/* Footer note */}
-          <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: '0.75rem', marginTop: '1.5rem' }}>
-            No login required · End-to-end P2P transfer · Files never touch our servers
-          </p>
+          </div>
         </div>
       </main>
 
       <Footer />
-
-      {/* Global keyframe animations */}
-      <style>{`
-        @keyframes spin       { to { transform: rotate(360deg); } }
-        @keyframes shimmer    { 0%,100% { background-position: 200% center; } 50% { background-position: -200% center; } }
-        @keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 0.8; } 100% { transform: scale(1.5); opacity: 0; } }
-        @keyframes blink      { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-        @keyframes celebrate  { 0% { transform: scale(0.5) rotate(-10deg); } 60% { transform: scale(1.2) rotate(5deg); } 100% { transform: scale(1) rotate(0); } }
-        @keyframes slideInRight { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-      `}</style>
     </div>
   );
 }

@@ -4,35 +4,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSignaling } from '@/hooks/useSignaling';
+import { useWebRTC } from '@/hooks/useWebRTC';
 import TransferModal from '../components/TransferModal';
 import { showToast } from '../components/Toast';
 import {
   Zap, Upload, Download, Folder, ArrowLeft, Plus,
   File, X, LinkIcon, Shield, CloudOff
 } from 'lucide-react';
-
-const ICE_SERVERS = {
-  iceServers: [
-    // Google STUN
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // Cloudflare STUN
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    // Twilio STUN
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    // Mozilla STUN
-    { urls: 'stun:stun.services.mozilla.com' },
-    // Metered TURN (Fallback)
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  ],
-};
-
-const CHUNK_SIZE = 64 * 1024;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -47,12 +25,13 @@ export default function Dashboard() {
   const router = useRouter();
   const [view, setView] = useState('home');
   const signaling = useSignaling();
+  const { createOfferWithIce, setAnswer, sendFiles, close: closeWebRTC } = useWebRTC();
 
   // Send state
   const [files, setFiles] = useState([]);
   const [roomId, setRoomId] = useState('');
   const [shareLink, setShareLink] = useState('');
-  const [transferStatus, setTransferStatus] = useState('idle');
+  const [transferStatus, setTransferStatus] = useState('idle'); // idle | waiting | connecting | transferring | done
   const [progress, setProgress] = useState(0);
   const [speed, setSpeed] = useState(0);
   const [eta, setEta] = useState(0);
@@ -63,9 +42,10 @@ export default function Dashboard() {
   // Receive state
   const [receiveLink, setReceiveLink] = useState('');
 
-  const pcRef = useRef(null);
   const filesRef = useRef([]);
   const roomIdRef = useRef('');
+  const activeDcRef = useRef(null);
+  const isCancelledRef = useRef(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -75,14 +55,7 @@ export default function Dashboard() {
     Math.random().toString(36).substring(2, 8).toUpperCase() +
     Math.random().toString(36).substring(2, 6).toUpperCase();
 
-  const readChunk = (file, start, end) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = reject;
-    reader.readAsArrayBuffer(file.slice(start, end));
-  });
-
-  // ── STEP 1: User selects files — just update state, no link yet ──
+  // ── File Selection ──
   const handleFilesSelected = useCallback((selectedFiles) => {
     if (!selectedFiles || selectedFiles.length === 0) return;
     const newFiles = [...filesRef.current, ...Array.from(selectedFiles)];
@@ -90,189 +63,115 @@ export default function Dashboard() {
     setFiles([...newFiles]);
   }, []);
 
-  // ── STEP 2: User clicks "Generate Transfer Link" ──
+  // ── STEP 2: Generate Transfer Link & Start Atomic Handshake ──
   const handleGenerateLink = useCallback(async () => {
     if (filesRef.current.length === 0) return;
     if (roomIdRef.current) {
-      // Already have a room — just open the modal again
       setModalOpen(true);
       return;
     }
 
     const id = generateRoomId();
+    isCancelledRef.current = false;
 
-    // ── CRITICAL FIX: Register ALL event listeners BEFORE creating the room
-    // and starting polling. If we create the room first and polling starts
-    // immediately, a fast receiver-joined signal can arrive in the first poll
-    // before listeners are attached — silently dropped, transfer never starts.
+    // Register signaling listeners before creating room and starting polling
     signaling.off('receiver-joined');
     signaling.off('answer');
-    signaling.off('ice-candidate');
-
-    const pendingCandidates = [];
 
     signaling.on('receiver-joined', async () => {
-      console.log('[Sender] receiver-joined received — starting WebRTC');
+      console.log('[Sender] Receiver joined — initiating atomic SDP Offer with ICE candidates');
       setTransferStatus('connecting');
 
-      const pc = new RTCPeerConnection(ICE_SERVERS);
-      pcRef.current = pc;
-      const dc = pc.createDataChannel('fileTransfer', { ordered: true });
-
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          // ── FIX: Delay ICE candidate sending by 200ms ──
-          // The receiver needs time to set the remote description (our offer)
-          // before it can accept ICE candidates. A brief delay prevents candidates
-          // from arriving before setRemoteDescription completes on the other side.
-          setTimeout(() => {
-            signaling.sendSignal('ice-candidate', { candidate: e.candidate });
-          }, 200);
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        console.log('[Sender] WebRTC connection state:', pc.connectionState);
-      };
-
-      dc.onopen = async () => {
-        setTransferStatus('transferring');
-
-        const totalBytes = filesRef.current.reduce((a, f) => a + f.size, 0);
-        let sentBytes = 0;
-        let lastTime = Date.now();
-        let lastBytes = 0;
-
-        dc.send(JSON.stringify({
-          type: 'session-info',
-          totalFiles: filesRef.current.length,
-          totalBytes,
-        }));
-
-        for (let f = 0; f < filesRef.current.length; f++) {
-          const file = filesRef.current[f];
-          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-          setCurrentFile(file.name);
-
-          dc.send(JSON.stringify({
-            type: 'meta',
-            fileName: file.name,
-            fileSize: file.size,
-            fileType: file.type || 'application/octet-stream',
-            totalChunks,
-            fileIndex: f,
-            totalFiles: filesRef.current.length,
-          }));
-
-          for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const chunk = await readChunk(file, start, end);
-
-            while (dc.bufferedAmount > 1024 * 1024) {
-              await new Promise(r => setTimeout(r, 50));
+      try {
+        const { offer, dc } = await createOfferWithIce({
+          onConnectionStateChange: (state) => {
+            console.log('[Sender] WebRTC Connection State:', state);
+            if (state === 'connected') {
+              console.log('[Sender] Direct P2P tunnel established!');
             }
+          },
+        });
 
-            dc.send(chunk);
-            sentBytes += (end - start);
+        activeDcRef.current = dc;
 
-            const now = Date.now();
-            const elapsed = (now - lastTime) / 1000;
-            if (elapsed >= 0.25) {
-              const delta = sentBytes - lastBytes;
-              const spd = delta / elapsed;
-              const remaining = totalBytes - sentBytes;
-              const etaVal = spd > 0 ? remaining / spd : 0;
-              lastTime = now;
-              lastBytes = sentBytes;
-              setProgress(Math.round((sentBytes / totalBytes) * 100));
+        dc.onopen = async () => {
+          console.log('[Sender] DataChannel open — commencing transfer');
+          setTransferStatus('transferring');
+
+          const totalBytes = filesRef.current.reduce((a, f) => a + f.size, 0);
+
+          await sendFiles(filesRef.current, dc, {
+            onFileStart: (fileName) => setCurrentFile(fileName),
+            onProgress: (p) => setProgress(p),
+            onSpeed: (spd, etaVal) => {
               setSpeed(spd);
               setEta(etaVal);
-            }
-          }
+            },
+            onComplete: async () => {
+              setTransferStatus('done');
+              setProgress(100);
+              // Stop polling since transfer is complete
+              signaling.stopPolling();
 
-          dc.send(JSON.stringify({ type: 'file-end', fileIndex: f }));
-        }
-
-        dc.send(JSON.stringify({ type: 'session-end' }));
-        setTransferStatus('done');
-        setProgress(100);
-
-        try {
-          await fetch('/api/transfers/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              roomId: id,
-              senderEmail: session?.user?.email,
-              files: filesRef.current.map(f => ({ fileName: f.name, fileSize: f.size, fileType: f.type })),
-              totalSize: totalBytes,
-            }),
+              try {
+                await fetch('/api/transfers/save', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    roomId: id,
+                    senderEmail: session?.user?.email,
+                    files: filesRef.current.map((f) => ({
+                      fileName: f.name,
+                      fileSize: f.size,
+                      fileType: f.type,
+                    })),
+                    totalSize: totalBytes,
+                  }),
+                });
+              } catch (_) {}
+            },
+            isCancelled: () => isCancelledRef.current,
           });
-        } catch (_) {}
-      };
+        };
 
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        // Post single atomic SDP Offer (all STUN/TURN candidates already bundled)
         await signaling.sendSignal('offer', { offer });
-        console.log('[Sender] Offer sent');
+        console.log('[Sender] 1-shot atomic Offer sent');
       } catch (err) {
-        console.error('[Sender] Error creating offer:', err);
+        console.error('[Sender] Failed to create offer:', err);
+        setTransferStatus('waiting');
       }
     });
 
     signaling.on('answer', async (data) => {
       const answer = data?.answer;
-      if (pcRef.current && answer) {
-        try {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-          console.log('[Sender] Remote description set from answer');
-          // Drain any ICE candidates that arrived before the answer
-          for (const candidate of pendingCandidates) {
-            try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
-          }
-          pendingCandidates.length = 0;
-        } catch (err) {
-          console.error('[Sender] setRemoteDescription failed:', err);
-        }
+      if (!answer) return;
+      console.log('[Sender] Atomic Answer received — applying remote description');
+      try {
+        await setAnswer(answer);
+      } catch (err) {
+        console.error('[Sender] setAnswer failed:', err);
       }
     });
 
-    signaling.on('ice-candidate', async (data) => {
-      const candidate = data?.candidate;
-      if (pcRef.current && candidate) {
-        if (pcRef.current.remoteDescription) {
-          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch (_) {}
-        } else {
-          pendingCandidates.push(candidate);
-        }
-      }
-    });
-
-    // ── NOW create the room and start polling (listeners are already wired) ──
     try {
       await signaling.createRoom(id);
-      // Start polling AFTER createRoom confirms the room exists in DB
       signaling.startPolling(id);
     } catch (err) {
       console.error('[Sender] Failed to create room:', err);
-      // Clean up listeners since we're aborting
       signaling.off('receiver-joined');
       signaling.off('answer');
-      signaling.off('ice-candidate');
       alert(`Could not create transfer session: ${err.message}\n\nPlease check your connection and try again.`);
       return;
     }
 
-    // Only show the link after the room is confirmed in DB
     setRoomId(id);
     roomIdRef.current = id;
     const link = `${window.location.origin}/receive?room=${id}`;
     setShareLink(link);
     setTransferStatus('waiting');
     setModalOpen(true);
-  }, [signaling, session]);
+  }, [signaling, createOfferWithIce, setAnswer, sendFiles, session]);
 
   const handleAddMoreFiles = useCallback((moreFiles) => {
     const newFiles = [...filesRef.current, ...Array.from(moreFiles)];
@@ -289,6 +188,7 @@ export default function Dashboard() {
   }, [transferStatus]);
 
   const handleModalClose = useCallback(() => {
+    isCancelledRef.current = true;
     setModalOpen(false);
     setTransferStatus('idle');
     setFiles([]);
@@ -298,12 +198,12 @@ export default function Dashboard() {
     setCurrentFile('');
     filesRef.current = [];
     roomIdRef.current = '';
-    if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
+    closeWebRTC();
     signaling.stopPolling();
-  }, [signaling]);
+  }, [signaling, closeWebRTC]);
 
   const handleGoBack = useCallback(() => {
-    if (transferStatus === 'transferring') return; // block during transfer
+    if (transferStatus === 'transferring') return;
     setView('home');
     if (transferStatus === 'idle') {
       setFiles([]);
@@ -323,16 +223,17 @@ export default function Dashboard() {
     router.push(`/receive?room=${id}`);
   }, [receiveLink, router]);
 
-  if (status === 'loading' || status === 'unauthenticated') return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-        <div style={{ width: '48px', height: '48px', border: '3px solid rgba(99,102,241,0.2)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Loading dashboard…</span>
+  if (status === 'loading' || status === 'unauthenticated') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: '48px', height: '48px', border: '3px solid rgba(99,102,241,0.2)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Loading dashboard…</span>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', flexDirection: 'column' }}>
@@ -354,7 +255,7 @@ export default function Dashboard() {
             <span style={{ fontWeight: 800, fontSize: '1.25rem', color: 'var(--text-primary)' }}>P2P Transfer</span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', display: 'none', '@media (minWidth: 600px)': { display: 'block' } }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
               Welcome, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{session?.user?.name}</span>
             </span>
             {session?.user?.role === 'admin' && (
@@ -420,7 +321,6 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Quick feature badges */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'center', marginTop: '3rem' }}>
               {[
                 { icon: <Shield size={14} />, label: 'End-to-End Encrypted' },

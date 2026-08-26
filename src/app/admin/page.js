@@ -149,47 +149,49 @@ export default function AdminOverviewPage() {
         <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.875rem' }}>
           Transfers — Last 7 Days
         </p>
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
+        <div className="glass-card" style={{ padding: '1.5rem', minWidth: 0 }}>
           {chartData.length === 0 || chartData.every(d => d.transfers === 0) ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px', color: 'var(--text-secondary)', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '240px', color: 'var(--text-secondary)', flexDirection: 'column', gap: '0.5rem' }}>
               <BarChart3 size={32} style={{ opacity: 0.4 }} />
               <p style={{ fontSize: '0.85rem' }}>No transfers in the last 7 days</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="transferGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis
-                  dataKey="day"
-                  tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-                  axisLine={{ stroke: 'var(--border-default)' }}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Area
-                  type="monotone"
-                  dataKey="transfers"
-                  name="Transfers"
-                  stroke="#6366f1"
-                  strokeWidth={2.5}
-                  fill="url(#transferGrad)"
-                  dot={{ r: 4, fill: '#6366f1', stroke: 'var(--bg-base)', strokeWidth: 2 }}
-                  activeDot={{ r: 6 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div style={{ width: '100%', height: 240, minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="transferGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                    axisLine={{ stroke: 'var(--border-default)' }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    allowDecimals={false}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="transfers"
+                    name="Transfers"
+                    stroke="#6366f1"
+                    strokeWidth={2.5}
+                    fill="url(#transferGrad)"
+                    dot={{ r: 4, fill: '#6366f1', stroke: 'var(--bg-base)', strokeWidth: 2 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </div>
       </div>
