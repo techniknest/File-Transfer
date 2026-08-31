@@ -26,7 +26,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [view, setView] = useState('home');
   const signaling = useSignaling();
-  const { createOfferWithIce, setAnswer, sendFiles, close: closeWebRTC } = useWebRTC();
+  const { createOfferWithIce, setAnswer, addCandidate, sendFiles, close: closeWebRTC } = useWebRTC();
 
   // Send state
   const [files, setFiles] = useState([]);
@@ -107,6 +107,7 @@ export default function Dashboard() {
     // Register signaling listeners before creating room and starting polling
     signaling.off('receiver-joined');
     signaling.off('answer');
+    signaling.off('ice-candidate');
 
     signaling.on('receiver-joined', async (joinData) => {
       console.log('[Sender] Receiver joined — initiating atomic SDP Offer with ICE candidates');
@@ -139,6 +140,18 @@ export default function Dashboard() {
               console.log('[Sender] Direct P2P tunnel established!');
             }
           },
+          // Trickle ICE: send each new local ICE candidate to receiver
+          onIceCandidate: async (candidate) => {
+            try {
+              await signaling.sendSignal('ice-candidate', { candidate, from: 'sender' });
+            } catch (_) {}
+          },
+        });
+
+        // Apply incoming trickle ICE candidates from receiver
+        signaling.on('ice-candidate', async (data) => {
+          if (data?.from !== 'receiver') return;
+          await addCandidate(data.candidate);
         });
 
         activeDcRef.current = dc;
@@ -254,6 +267,12 @@ export default function Dashboard() {
       }
     });
 
+    // Trickle ICE: apply incoming candidates from receiver (before offer/answer)
+    signaling.on('ice-candidate', async (data) => {
+      if (data?.from !== 'receiver') return;
+      await addCandidate(data.candidate);
+    });
+
     try {
       await signaling.createRoom(id);
       signaling.startPolling(id);
@@ -279,7 +298,7 @@ export default function Dashboard() {
     setShareLink(link);
     setTransferStatus('waiting');
     setModalOpen(true);
-  }, [signaling, createOfferWithIce, setAnswer, sendFiles, session]);
+  }, [signaling, createOfferWithIce, setAnswer, addCandidate, sendFiles, session]);
 
   const handleAddMoreFiles = useCallback((moreFiles) => {
     const newFiles = [...filesRef.current, ...Array.from(moreFiles)];

@@ -49,18 +49,24 @@ export default function AdminLogsPage() {
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '50',
+        _t: Date.now().toString(),
       });
       if (category !== 'all') params.set('category', category);
       if (level !== 'all') params.set('level', level);
       if (search.trim()) params.set('search', search.trim());
       if (roomFilter.trim()) params.set('roomId', roomFilter.trim().toUpperCase());
 
-      const res = await fetch(`/api/admin/logs?${params.toString()}`);
+      const res = await fetch(`/api/admin/logs?${params.toString()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       if (res.ok) {
         const data = await res.json();
         setLogs(data.logs || []);
         setTotalPages(data.pages || 1);
         if (data.stats) setStats(data.stats);
+      } else {
+        console.error('[AdminLogs] Fetch failed:', res.status, await res.text().catch(() => ''));
       }
     } catch (err) {
       console.error('[AdminLogs] Fetch error:', err);
@@ -91,7 +97,11 @@ export default function AdminLogsPage() {
     if (!confirm('Are you sure you want to clear all system audit logs?')) return;
     setClearing(true);
     try {
-      const res = await fetch('/api/admin/logs', { method: 'DELETE' });
+      const res = await fetch(`/api/admin/logs?_t=${Date.now()}`, {
+        method: 'DELETE',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       if (res.ok) {
         fetchLogs(true);
       }

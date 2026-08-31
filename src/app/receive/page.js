@@ -83,7 +83,7 @@ export default function ReceivePage() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const signaling = useSignaling();
-  const { createAnswerWithIce, close: closeWebRTC } = useWebRTC();
+  const { createAnswerWithIce, addCandidate, close: closeWebRTC } = useWebRTC();
 
   const [stats, setStats] = useState({
     progress: 0,
@@ -330,6 +330,13 @@ export default function ReceivePage() {
     });
 
     signaling.off('offer');
+    signaling.off('ice-candidate');
+
+    // Trickle ICE: apply sender's ICE candidates as they arrive
+    signaling.on('ice-candidate', async (data) => {
+      if (data?.from !== 'sender') return;
+      await addCandidate(data.candidate);
+    });
 
     signaling.on('offer', async (data) => {
       const offer = data?.offer;
@@ -359,6 +366,12 @@ export default function ReceivePage() {
             if (state === 'connected') {
               console.log('[Receiver] Direct P2P tunnel established!');
             }
+          },
+          // Trickle ICE: forward receiver's local ICE candidates to sender
+          onIceCandidate: async (candidate) => {
+            try {
+              await signaling.sendSignal('ice-candidate', { candidate, from: 'receiver' });
+            } catch (_) {}
           },
           onDataChannel: (dc) => {
             handleSetupDataChannel(dc);
@@ -424,7 +437,7 @@ export default function ReceivePage() {
         addToast(msg, 'error', 6000);
       }
     }
-  }, [signaling, createAnswerWithIce, handleSetupDataChannel, addToast]);
+  }, [signaling, createAnswerWithIce, addCandidate, handleSetupDataChannel, addToast]);
 
   useEffect(() => {
     if (initializedRef.current) return;

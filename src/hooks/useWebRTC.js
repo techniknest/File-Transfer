@@ -11,22 +11,21 @@ export const ICE_SERVERS = {
     { urls: 'stun:stun4.l.google.com:19302' },
     // Cloudflare Public STUN
     { urls: 'stun:stun.cloudflare.com:3478' },
-    // OpenRelay Metered STUN & TURN (UDP + TCP Port 443 / 80)
+    // Metered Public STUN & TURN
     { urls: 'stun:openrelay.metered.ca:80' },
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ],
+  iceCandidatePoolSize: 10,
 };
 
-const CHUNK_SIZE = 64 * 1024; // 64KB chunks for optimal throughput
+const CHUNK_SIZE = 64 * 1024; // 64KB chunks for high throughput
 
 /**
  * Wait for ICE gathering to complete or timeout after maxTimeoutMs.
- * This guarantees the generated SDP contains all STUN/TURN candidates,
- * enabling a single atomic HTTP handshake without trickle ICE spam on serverless.
  */
-export function waitForIceGathering(pc, maxTimeoutMs = 5000) {
+export function waitForIceGathering(pc, maxTimeoutMs = 3000) {
   return new Promise((resolve) => {
     if (pc.iceGatheringState === 'complete') {
       resolve();
@@ -49,7 +48,6 @@ export function waitForIceGathering(pc, maxTimeoutMs = 5000) {
 
     pc.addEventListener('icegatheringstatechange', checkState);
 
-    // Safety fallback timer to prevent infinite waiting on sluggish networks
     timeoutId = setTimeout(() => {
       cleanup();
       resolve();
@@ -60,16 +58,29 @@ export function waitForIceGathering(pc, maxTimeoutMs = 5000) {
 export function useWebRTC() {
   const pcRef = useRef(null);
   const dcRef = useRef(null);
+  const pendingCandidatesRef = useRef([]);
+  const hasRemoteDescriptionRef = useRef(false);
 
-  const initPC = useCallback(({ onConnectionStateChange, onDataChannel } = {}) => {
+  const initPC = useCallback(({ onConnectionStateChange, onDataChannel, onIceCandidate } = {}) => {
     if (pcRef.current) {
       try {
         pcRef.current.close();
       } catch (_) {}
     }
 
+    pendingCandidatesRef.current = [];
+    hasRemoteDescriptionRef.current = false;
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
     pcRef.current = pc;
+
+    if (onIceCandidate) {
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          onIceCandidate(e.candidate);
+        }
+      };
+    }
 
     if (onConnectionStateChange) {
       pc.onconnectionstatechange = () => onConnectionStateChange(pc.connectionState);
@@ -89,10 +100,10 @@ export function useWebRTC() {
   }, []);
 
   /**
-   * Sender: Creates an atomic SDP Offer with gathered ICE candidates.
+   * Sender: Creates an atomic SDP Offer with gathered ICE candidates + live trickle listener.
    */
-  const createOfferWithIce = useCallback(async ({ onConnectionStateChange, onDataChannel } = {}) => {
-    const pc = initPC({ onConnectionStateChange, onDataChannel });
+  const createOfferWithIce = useCallback(async ({ onConnectionStateChange, onDataChannel, onIceCandidate } = {}) => {
+    const pc = initPC({ onConnectionStateChange, onDataChannel, onIceCandidate });
     const dc = pc.createDataChannel('fileTransfer', { ordered: true });
     dc.binaryType = 'arraybuffer';
     dcRef.current = dc;
@@ -100,8 +111,8 @@ export function useWebRTC() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // Wait for STUN/TURN ICE candidate gathering to finish
-    await waitForIceGathering(pc, 5000);
+    // Give STUN/TURN initial window to gather candidates
+    await waitForIceGathering(pc, 2500);
 
     return {
       offer: {
@@ -114,17 +125,22 @@ export function useWebRTC() {
   }, [initPC]);
 
   /**
-   * Receiver: Sets remote SDP Offer and creates an atomic SDP Answer with gathered ICE candidates.
+   * Receiver: Sets remote SDP Offer and creates an atomic SDP Answer with gathered ICE candidates + live trickle listener.
    */
-  const createAnswerWithIce = useCallback(async (offer, { onConnectionStateChange, onDataChannel } = {}) => {
-    const pc = initPC({ onConnectionStateChange, onDataChannel });
+  const createAnswerWithIce = useCallback(async (offer, { onConnectionStateChange, onDataChannel, onIceCandidate } = {}) => {
+    const pc = initPC({ onConnectionStateChange, onDataChannel, onIceCandidate });
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    hasRemoteDescriptionRef.current = true;
+
+    // Flush any early candidates
+    flushPendingCandidates(pc);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Wait for STUN/TURN ICE candidate gathering to finish
-    await waitForIceGathering(pc, 5000);
+    // Give STUN/TURN initial window to gather candidates
+    await waitForIceGathering(pc, 2500);
 
     return {
       answer: {
@@ -135,6 +151,33 @@ export function useWebRTC() {
     };
   }, [initPC]);
 
+  const flushPendingCandidates = (pc) => {
+    if (!pc || !hasRemoteDescriptionRef.current) return;
+    while (pendingCandidatesRef.current.length > 0) {
+      const cand = pendingCandidatesRef.current.shift();
+      pc.addIceCandidate(new RTCIceCandidate(cand)).catch((err) => {
+        console.warn('[WebRTC] Buffered candidate error:', err);
+      });
+    }
+  };
+
+  /**
+   * Add incoming trickle ICE candidate with buffering if remote description isn't set yet.
+   */
+  const addCandidate = useCallback(async (candidate) => {
+    if (!candidate) return;
+    const pc = pcRef.current;
+    if (!pc || !hasRemoteDescriptionRef.current || !pc.remoteDescription) {
+      pendingCandidatesRef.current.push(candidate);
+      return;
+    }
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.warn('[WebRTC] addIceCandidate error:', err);
+    }
+  }, []);
+
   /**
    * Sender: Sets remote SDP Answer received from Receiver.
    */
@@ -143,6 +186,8 @@ export function useWebRTC() {
       throw new Error('PeerConnection is not initialized');
     }
     await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+    hasRemoteDescriptionRef.current = true;
+    flushPendingCandidates(pcRef.current);
   }, []);
 
   /**
@@ -235,6 +280,8 @@ export function useWebRTC() {
   }, []);
 
   const close = useCallback(() => {
+    pendingCandidatesRef.current = [];
+    hasRemoteDescriptionRef.current = false;
     if (dcRef.current) {
       try {
         dcRef.current.close();
@@ -256,6 +303,7 @@ export function useWebRTC() {
     createOfferWithIce,
     createAnswerWithIce,
     setAnswer,
+    addCandidate,
     sendFiles,
     close,
   };
