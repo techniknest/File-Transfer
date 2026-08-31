@@ -51,10 +51,20 @@ export async function GET(request) {
 
     if (signals.length > 0) {
       const signalIds = signals.map(s => s._id);
+
+      // Mark signals as consumed by this client
       await Signal.updateMany(
         { _id: { $in: signalIds } },
         { $addToSet: { consumedBy: clientId } }
       );
+
+      // Clean up signals that are old enough (>10s) and have been consumed —
+      // keeps MongoDB lean during active sessions without risking losing fresh signals
+      const tenSecondsAgo = new Date(Date.now() - 10_000);
+      await Signal.deleteMany({
+        _id: { $in: signalIds },
+        createdAt: { $lt: tenSecondsAgo },
+      }).catch(() => {}); // Non-blocking cleanup — don't fail the response
     }
 
     return NextResponse.json({ signals });

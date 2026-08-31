@@ -26,7 +26,7 @@ const CHUNK_SIZE = 64 * 1024; // 64KB chunks for optimal throughput
  * This guarantees the generated SDP contains all STUN/TURN candidates,
  * enabling a single atomic HTTP handshake without trickle ICE spam on serverless.
  */
-export function waitForIceGathering(pc, maxTimeoutMs = 2000) {
+export function waitForIceGathering(pc, maxTimeoutMs = 5000) {
   return new Promise((resolve) => {
     if (pc.iceGatheringState === 'complete') {
       resolve();
@@ -101,7 +101,7 @@ export function useWebRTC() {
     await pc.setLocalDescription(offer);
 
     // Wait for STUN/TURN ICE candidate gathering to finish
-    await waitForIceGathering(pc, 2500);
+    await waitForIceGathering(pc, 5000);
 
     return {
       offer: {
@@ -124,7 +124,7 @@ export function useWebRTC() {
     await pc.setLocalDescription(answer);
 
     // Wait for STUN/TURN ICE candidate gathering to finish
-    await waitForIceGathering(pc, 2500);
+    await waitForIceGathering(pc, 5000);
 
     return {
       answer: {

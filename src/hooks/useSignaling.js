@@ -1,9 +1,10 @@
 'use client';
 import { useRef, useEffect, useCallback } from 'react';
 
-const FAST_POLL_INTERVAL = 600;
-const STEADY_POLL_INTERVAL = 1500;
-const FAST_POLL_COUNT = 10;
+// Polling constants — tuned for Vercel serverless latency
+const FAST_POLL_INTERVAL = 500;   // 500ms during initial handshake phase
+const STEADY_POLL_INTERVAL = 1200; // 1.2s once connection is established
+const FAST_POLL_COUNT = 20;        // Stay fast for 20 polls (10 seconds) to catch receiver joining
 const MAX_FAIL_STREAK = 3;
 
 export function useSignaling() {

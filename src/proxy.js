@@ -6,7 +6,7 @@ export default withAuth(
     const { token } = req.nextauth;
     const { pathname } = req.nextUrl;
 
-    // Protect admin routes
+    // Protect admin routes — only allow users with role 'admin'
     if (pathname.startsWith('/admin') && token?.role !== 'admin') {
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
@@ -15,6 +15,7 @@ export default withAuth(
   },
   {
     callbacks: {
+      // Only allow requests with a valid JWT token
       authorized: ({ token }) => !!token,
     },
     pages: {
@@ -23,7 +24,7 @@ export default withAuth(
   }
 );
 
-// Match dashboard and admin paths
+// Match dashboard and admin paths — all other paths bypass this middleware
 export const config = {
   matcher: ['/dashboard/:path*', '/admin/:path*'],
 };
