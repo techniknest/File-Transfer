@@ -11,6 +11,7 @@ import {
   Zap, Upload, Download, Folder, ArrowLeft, Plus,
   File, X, LinkIcon, Shield, CloudOff
 } from 'lucide-react';
+import { logEvent } from '@/lib/logger';
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -61,7 +62,21 @@ export default function Dashboard() {
     const newFiles = [...filesRef.current, ...Array.from(selectedFiles)];
     filesRef.current = newFiles;
     setFiles([...newFiles]);
-  }, []);
+
+    const totalBytes = newFiles.reduce((a, f) => a + f.size, 0);
+    logEvent({
+      eventType: 'file_selected',
+      level: 'info',
+      category: 'file',
+      message: `Sender selected ${newFiles.length} file(s) (${formatBytes(totalBytes)})`,
+      userEmail: session?.user?.email,
+      metadata: {
+        fileCount: newFiles.length,
+        totalBytes,
+        fileNames: newFiles.map(f => f.name),
+      },
+    });
+  }, [session]);
 
   // ── STEP 2: Generate Transfer Link & Start Atomic Handshake ──
   const handleGenerateLink = useCallback(async () => {
@@ -73,19 +88,53 @@ export default function Dashboard() {
 
     const id = generateRoomId();
     isCancelledRef.current = false;
+    const totalBytes = filesRef.current.reduce((a, f) => a + f.size, 0);
+
+    logEvent({
+      eventType: 'room_created',
+      level: 'info',
+      category: 'room',
+      roomId: id,
+      message: `Transfer room created: ${id} with ${filesRef.current.length} file(s) (${formatBytes(totalBytes)})`,
+      userEmail: session?.user?.email,
+      metadata: {
+        fileCount: filesRef.current.length,
+        totalBytes,
+        fileNames: filesRef.current.map(f => f.name),
+      },
+    });
 
     // Register signaling listeners before creating room and starting polling
     signaling.off('receiver-joined');
     signaling.off('answer');
 
-    signaling.on('receiver-joined', async () => {
+    signaling.on('receiver-joined', async (joinData) => {
       console.log('[Sender] Receiver joined — initiating atomic SDP Offer with ICE candidates');
       setTransferStatus('connecting');
+
+      logEvent({
+        eventType: 'receiver_joined_detected',
+        level: 'info',
+        category: 'webrtc',
+        roomId: id,
+        message: `Sender detected receiver joined room ${id}. Generating atomic SDP offer...`,
+        userEmail: session?.user?.email,
+        metadata: joinData,
+      });
 
       try {
         const { offer, dc } = await createOfferWithIce({
           onConnectionStateChange: (state) => {
             console.log('[Sender] WebRTC Connection State:', state);
+            logEvent({
+              eventType: 'webrtc_sender_state_change',
+              level: state === 'connected' ? 'success' : state === 'failed' ? 'error' : 'info',
+              category: 'webrtc',
+              roomId: id,
+              message: `Sender WebRTC connection state changed to: ${state}`,
+              userEmail: session?.user?.email,
+              metadata: { state },
+            });
             if (state === 'connected') {
               console.log('[Sender] Direct P2P tunnel established!');
             }
@@ -98,7 +147,15 @@ export default function Dashboard() {
           console.log('[Sender] DataChannel open — commencing transfer');
           setTransferStatus('transferring');
 
-          const totalBytes = filesRef.current.reduce((a, f) => a + f.size, 0);
+          logEvent({
+            eventType: 'transfer_started',
+            level: 'success',
+            category: 'transfer',
+            roomId: id,
+            message: `DataChannel open. Starting P2P file transmission for room ${id}`,
+            userEmail: session?.user?.email,
+            metadata: { fileCount: filesRef.current.length, totalBytes },
+          });
 
           await sendFiles(filesRef.current, dc, {
             onFileStart: (fileName) => setCurrentFile(fileName),
@@ -110,8 +167,17 @@ export default function Dashboard() {
             onComplete: async () => {
               setTransferStatus('done');
               setProgress(100);
-              // Stop polling since transfer is complete
               signaling.stopPolling();
+
+              logEvent({
+                eventType: 'transfer_completed',
+                level: 'success',
+                category: 'transfer',
+                roomId: id,
+                message: `P2P transfer completed successfully for room ${id} (${formatBytes(totalBytes)})`,
+                userEmail: session?.user?.email,
+                metadata: { totalBytes, fileCount: filesRef.current.length },
+              });
 
               try {
                 await fetch('/api/transfers/save', {
@@ -137,9 +203,27 @@ export default function Dashboard() {
         // Post single atomic SDP Offer (all STUN/TURN candidates already bundled)
         await signaling.sendSignal('offer', { offer });
         console.log('[Sender] 1-shot atomic Offer sent');
+
+        logEvent({
+          eventType: 'webrtc_offer_sent',
+          level: 'info',
+          category: 'webrtc',
+          roomId: id,
+          message: `Sender posted 1-shot atomic SDP Offer for room ${id}`,
+          userEmail: session?.user?.email,
+        });
       } catch (err) {
         console.error('[Sender] Failed to create offer:', err);
         setTransferStatus('waiting');
+        logEvent({
+          eventType: 'webrtc_offer_error',
+          level: 'error',
+          category: 'webrtc',
+          roomId: id,
+          message: `Failed to create SDP Offer for room ${id}: ${err.message}`,
+          userEmail: session?.user?.email,
+          metadata: { stack: err.stack },
+        });
       }
     });
 
@@ -147,10 +231,26 @@ export default function Dashboard() {
       const answer = data?.answer;
       if (!answer) return;
       console.log('[Sender] Atomic Answer received — applying remote description');
+      logEvent({
+        eventType: 'webrtc_answer_received',
+        level: 'info',
+        category: 'webrtc',
+        roomId: id,
+        message: `Sender received atomic SDP Answer from receiver for room ${id}`,
+        userEmail: session?.user?.email,
+      });
       try {
         await setAnswer(answer);
       } catch (err) {
         console.error('[Sender] setAnswer failed:', err);
+        logEvent({
+          eventType: 'webrtc_set_answer_error',
+          level: 'error',
+          category: 'webrtc',
+          roomId: id,
+          message: `Sender failed to apply remote description: ${err.message}`,
+          userEmail: session?.user?.email,
+        });
       }
     });
 
@@ -161,6 +261,14 @@ export default function Dashboard() {
       console.error('[Sender] Failed to create room:', err);
       signaling.off('receiver-joined');
       signaling.off('answer');
+      logEvent({
+        eventType: 'room_creation_failed',
+        level: 'error',
+        category: 'room',
+        roomId: id,
+        message: `Failed to create room in database: ${err.message}`,
+        userEmail: session?.user?.email,
+      });
       alert(`Could not create transfer session: ${err.message}\n\nPlease check your connection and try again.`);
       return;
     }

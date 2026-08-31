@@ -2,6 +2,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
+import { logEvent } from '@/lib/logger';
 
 // FIX: Ensure NextAuth always has the correct URL in production.
 // Vercel auto-injects VERCEL_URL (without protocol) for every deployment.
@@ -26,14 +27,48 @@ export const authOptions = {
           email: credentials.email?.toLowerCase()?.trim(),
         }).lean();
 
-        if (!user) throw new Error('No user found');
+        if (!user) {
+          logEvent({
+            eventType: 'auth_login_failed',
+            level: 'warn',
+            category: 'auth',
+            message: `Failed login attempt: User not found (${credentials.email})`,
+            userEmail: credentials.email,
+          }).catch(() => {});
+          throw new Error('No user found');
+        }
 
         if (user.status === 'blocked') {
+          logEvent({
+            eventType: 'auth_login_blocked',
+            level: 'warn',
+            category: 'auth',
+            message: `Blocked user attempted login: ${user.email}`,
+            userEmail: user.email,
+          }).catch(() => {});
           throw new Error('Account blocked. Contact admin.');
         }
 
         const isValid = await bcrypt.compare(credentials.password, user.password);
-        if (!isValid) throw new Error('Invalid password');
+        if (!isValid) {
+          logEvent({
+            eventType: 'auth_login_failed',
+            level: 'warn',
+            category: 'auth',
+            message: `Failed login attempt: Incorrect password for ${user.email}`,
+            userEmail: user.email,
+          }).catch(() => {});
+          throw new Error('Invalid password');
+        }
+
+        logEvent({
+          eventType: 'auth_login_success',
+          level: 'success',
+          category: 'auth',
+          message: `User signed in successfully: ${user.name} (${user.email}) [Role: ${user.role}]`,
+          userEmail: user.email,
+          metadata: { role: user.role, status: user.status },
+        }).catch(() => {});
 
         return {
           id: user._id.toString(),

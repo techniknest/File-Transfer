@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Room from '@/models/Room';
 import Signal from '@/models/Signal';
+import SystemLog from '@/models/SystemLog';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -36,6 +37,17 @@ export async function POST(request) {
       senderClientId: clientId,
       status: 'waiting',
     });
+
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    await SystemLog.create({
+      eventType: 'api_room_created',
+      level: 'info',
+      category: 'room',
+      roomId,
+      clientId,
+      message: `API: Created transfer room ${roomId} for sender ${clientId.substring(0, 12)}`,
+      ip,
+    }).catch(() => {});
 
     return NextResponse.json(
       { success: true, room },

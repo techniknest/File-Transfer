@@ -8,6 +8,7 @@ import {
   FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File,
   Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info
 } from 'lucide-react';
+import { logEvent } from '@/lib/logger';
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
@@ -160,6 +161,15 @@ export default function ReceivePage() {
           isWritingRef.current = false;
           setStats((prev) => ({ ...prev, currentFile: msg.fileName }));
 
+          logEvent({
+            eventType: 'receiver_file_start',
+            level: 'info',
+            category: 'transfer',
+            roomId: roomIdRef.current,
+            message: `Receiver started receiving file: ${msg.fileName} (${formatBytes(msg.fileSize)})`,
+            metadata: msg,
+          });
+
           if ('showSaveFilePicker' in window) {
             (async () => {
               try {
@@ -183,6 +193,15 @@ export default function ReceivePage() {
         if (msg.type === 'file-end') {
           const meta = metaRef.current;
           if (!meta) return;
+
+          logEvent({
+            eventType: 'receiver_file_completed',
+            level: 'success',
+            category: 'transfer',
+            roomId: roomIdRef.current,
+            message: `Receiver completed downloading file: ${meta.fileName} (${formatBytes(meta.fileSize)})`,
+            metadata: meta,
+          });
 
           if (streamRef.current && streamRef.current !== 'FALLBACK') {
             const finishDiskWrite = async () => {
@@ -238,6 +257,14 @@ export default function ReceivePage() {
           setStats((prev) => ({ ...prev, progress: 100 }));
           addToast('All files received! Check your Downloads folder.', 'success', 6000);
           signaling.stopPolling();
+
+          logEvent({
+            eventType: 'receiver_session_completed',
+            level: 'success',
+            category: 'transfer',
+            roomId: roomIdRef.current,
+            message: `All files received successfully in room ${roomIdRef.current}`,
+          });
         }
       } else {
         // Binary ArrayBuffer chunk
@@ -272,6 +299,13 @@ export default function ReceivePage() {
 
     dc.onerror = (err) => {
       console.error('[DataChannel] Error:', err);
+      logEvent({
+        eventType: 'receiver_datachannel_error',
+        level: 'error',
+        category: 'webrtc',
+        roomId: roomIdRef.current,
+        message: `DataChannel error on receiver: ${err.message || 'Unknown channel error'}`,
+      });
     };
   }, [addToast, signaling]);
 
@@ -287,6 +321,14 @@ export default function ReceivePage() {
     chunksRef.current = [];
     metaRef.current = null;
 
+    logEvent({
+      eventType: 'receiver_connect_attempt',
+      level: 'info',
+      category: 'room',
+      roomId: targetRoomId,
+      message: `Receiver initiated connection to transfer room: ${targetRoomId}`,
+    });
+
     signaling.off('offer');
 
     signaling.on('offer', async (data) => {
@@ -294,10 +336,26 @@ export default function ReceivePage() {
       if (!offer) return;
       console.log('[Receiver] Atomic Offer received — generating atomic Answer with ICE candidates');
 
+      logEvent({
+        eventType: 'receiver_offer_received',
+        level: 'info',
+        category: 'webrtc',
+        roomId: targetRoomId,
+        message: `Receiver received atomic SDP offer from sender for room ${targetRoomId}. Generating atomic answer...`,
+      });
+
       try {
         const { answer } = await createAnswerWithIce(offer, {
           onConnectionStateChange: (state) => {
             console.log('[Receiver] WebRTC Connection State:', state);
+            logEvent({
+              eventType: 'webrtc_receiver_state_change',
+              level: state === 'connected' ? 'success' : state === 'failed' ? 'error' : 'info',
+              category: 'webrtc',
+              roomId: targetRoomId,
+              message: `Receiver WebRTC connection state changed to: ${state}`,
+              metadata: { state },
+            });
             if (state === 'connected') {
               console.log('[Receiver] Direct P2P tunnel established!');
             }
@@ -310,9 +368,25 @@ export default function ReceivePage() {
         // Send 1 single atomic Answer (containing all STUN/TURN candidates)
         await signaling.sendSignal('answer', { answer });
         console.log('[Receiver] 1-shot atomic Answer sent');
+
+        logEvent({
+          eventType: 'receiver_answer_sent',
+          level: 'info',
+          category: 'webrtc',
+          roomId: targetRoomId,
+          message: `Receiver posted 1-shot atomic SDP Answer for room ${targetRoomId}`,
+        });
       } catch (err) {
         console.error('[Receiver] Failed to handle offer:', err);
         addToast('WebRTC negotiation failed.', 'error');
+        logEvent({
+          eventType: 'receiver_negotiation_error',
+          level: 'error',
+          category: 'webrtc',
+          roomId: targetRoomId,
+          message: `Receiver failed during WebRTC handshake: ${err.message}`,
+          metadata: { stack: err.stack },
+        });
       }
     });
 
@@ -320,9 +394,25 @@ export default function ReceivePage() {
       await signaling.joinRoom(targetRoomId);
       setStatus('waiting');
       addToast('Connected! Waiting for sender to begin...', 'info');
+
+      logEvent({
+        eventType: 'receiver_joined_success',
+        level: 'success',
+        category: 'room',
+        roomId: targetRoomId,
+        message: `Receiver successfully joined room ${targetRoomId}. Waiting for sender's SDP offer...`,
+      });
     } catch (err) {
       const msg = err.message || 'Could not connect to room. Please try again.';
       setErrorMessage(msg);
+      logEvent({
+        eventType: 'receiver_join_failed',
+        level: 'error',
+        category: 'room',
+        roomId: targetRoomId,
+        message: `Receiver failed to join room ${targetRoomId}: ${msg}`,
+        metadata: { code: err.code, stack: err.stack },
+      });
       if (err.code === 'ROOM_NOT_FOUND') {
         setStatus('invalid');
         addToast('Room not found. Check the link or ask the sender to resend.', 'error');

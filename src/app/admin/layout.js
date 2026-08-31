@@ -10,6 +10,7 @@ import {
 
 const ADMIN_NAV = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={20} />, exact: true },
+  { href: '/admin/logs', label: 'System Logs', icon: <Activity size={20} /> },
   { href: '/admin/users', label: 'Users', icon: <Users size={20} /> },
   { href: '/admin/transfers', label: 'Transfers', icon: <FileText size={20} /> },
   { href: '/admin/reviews', label: 'Reviews', icon: <Star size={20} /> },

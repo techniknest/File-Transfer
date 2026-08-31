@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Room from '@/models/Room';
 import Signal from '@/models/Signal';
+import SystemLog from '@/models/SystemLog';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -11,6 +12,7 @@ const NO_CACHE_HEADERS = {
 };
 
 export async function POST(request, { params }) {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   try {
     await connectDB();
     const resolvedParams = await params;
@@ -36,6 +38,16 @@ export async function POST(request, { params }) {
     const room = await Room.findOne({ roomId });
 
     if (!room) {
+      await SystemLog.create({
+        eventType: 'api_room_not_found',
+        level: 'warn',
+        category: 'room',
+        roomId,
+        clientId,
+        message: `API: Receiver ${clientId.substring(0, 12)} attempted to join non-existent room: ${roomId}`,
+        ip,
+      }).catch(() => {});
+
       return NextResponse.json(
         { error: `Room ${roomId} not found. Please verify the room code or ask the sender to generate a fresh link.`, code: 'ROOM_NOT_FOUND' },
         { status: 404, headers: NO_CACHE_HEADERS }
@@ -43,6 +55,16 @@ export async function POST(request, { params }) {
     }
 
     if (room.receiverClientId && room.receiverClientId !== clientId) {
+      await SystemLog.create({
+        eventType: 'api_room_full',
+        level: 'warn',
+        category: 'room',
+        roomId,
+        clientId,
+        message: `API: Room ${roomId} is full (already has receiver ${room.receiverClientId.substring(0, 12)})`,
+        ip,
+      }).catch(() => {});
+
       return NextResponse.json(
         { error: 'Another receiver is already connected to this transfer session.', code: 'ROOM_FULL' },
         { status: 400, headers: NO_CACHE_HEADERS }
@@ -61,12 +83,30 @@ export async function POST(request, { params }) {
       payload: { roomId, receiverClientId: clientId },
     });
 
+    await SystemLog.create({
+      eventType: 'api_room_joined',
+      level: 'success',
+      category: 'room',
+      roomId,
+      clientId,
+      message: `API: Receiver ${clientId.substring(0, 12)} joined room ${roomId} (Sender: ${room.senderClientId.substring(0, 12)})`,
+      ip,
+    }).catch(() => {});
+
     return NextResponse.json(
       { success: true, room },
       { headers: NO_CACHE_HEADERS }
     );
   } catch (error) {
     console.error('[API /rooms/[roomId]/join] Error:', error.message);
+    await SystemLog.create({
+      eventType: 'api_join_error',
+      level: 'error',
+      category: 'room',
+      message: `API join error: ${error.message}`,
+      ip,
+    }).catch(() => {});
+
     return NextResponse.json(
       { error: error.message || 'Internal server error while joining room' },
       { status: 500, headers: NO_CACHE_HEADERS }
