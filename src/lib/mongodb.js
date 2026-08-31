@@ -23,12 +23,16 @@ async function connectDB() {
   // If disconnected or never connected, initialize connection promise
   if (!cached.promise || mongoose.connection.readyState === 0) {
     const opts = {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-      socketTimeoutMS: 20000,
-      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 8000,
+      connectTimeoutMS: 8000,
+      socketTimeoutMS: 30000,
+      // CRITICAL: maxPoolSize=1 for Vercel serverless.
+      // Each Lambda invocation is isolated. Setting >1 wastes RAM
+      // and causes the 96% heap usage you see in the health dashboard.
+      maxPoolSize: 1,
       minPoolSize: 0,
       family: 4, // Force IPv4 to prevent SRV DNS resolution timeouts on Vercel
+      bufferCommands: false, // Fail immediately if not connected — don't mask errors
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((m) => m);

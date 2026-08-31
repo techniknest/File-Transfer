@@ -4,6 +4,9 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import mongoose from 'mongoose';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -51,6 +54,13 @@ export async function GET() {
       return acc;
     }, {});
 
+    // Log count for diagnostics
+    let logCount = null;
+    try {
+      const SystemLog = (await import('@/models/SystemLog')).default;
+      logCount = await SystemLog.countDocuments({});
+    } catch (_) {}
+
     return NextResponse.json({
       server: {
         status: 'online',
@@ -61,6 +71,7 @@ export async function GET() {
           total: Math.round(memUsage.heapTotal / 1024 / 1024),
           rss: Math.round(memUsage.rss / 1024 / 1024),
           usagePercent: Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100),
+          note: 'Vercel Lambda has ~256MB. Memory % reflects this instance only.',
         },
         nodeVersion: process.version,
       },
@@ -69,9 +80,10 @@ export async function GET() {
         useMockDb: !!global.useMockDb,
         responseTime: dbResponseTime,
         mongoVersion: mongoose.version,
-        connectionState: global.useMockDb 
-          ? 'Mock Database Active' 
+        connectionState: global.useMockDb
+          ? 'Mock Database Active'
           : (['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown'),
+        systemLogCount: logCount,
       },
       transfers: {
         activeSessions,
@@ -79,7 +91,7 @@ export async function GET() {
         sessionsByStatus,
         totalRooms: Object.keys(rooms).length,
       },
-    });
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
