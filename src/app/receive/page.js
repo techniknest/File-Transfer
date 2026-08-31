@@ -366,20 +366,41 @@ export default function ReceivePage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [status]);
 
+  const extractRoomId = (input) => {
+    if (!input) return '';
+    let val = input.trim();
+    try {
+      if (val.startsWith('http://') || val.startsWith('https://')) {
+        const url = new URL(val);
+        const queryRoom = url.searchParams.get('room');
+        if (queryRoom) return queryRoom.trim().toUpperCase();
+        const pathSegments = url.pathname.split('/').filter(Boolean);
+        if (pathSegments.length > 0) {
+          const lastSegment = pathSegments[pathSegments.length - 1];
+          if (lastSegment !== 'receive') return lastSegment.trim().toUpperCase();
+        }
+      }
+    } catch (_) {}
+    // If it has room= in it
+    if (val.includes('room=')) {
+      const match = val.match(/room=([a-zA-Z0-9_-]+)/i);
+      if (match && match[1]) return match[1].trim().toUpperCase();
+    }
+    return val.replace(/[^a-zA-Z0-9_-]/g, '').trim().toUpperCase();
+  };
+
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    if (!manualLink.trim()) return;
-    let roomVal = manualLink.trim();
-    try {
-      const url = new URL(roomVal);
-      roomVal = url.searchParams.get('room') || roomVal;
-    } catch {
-      roomVal = roomVal.toUpperCase();
+    const cleanRoom = extractRoomId(manualLink);
+    if (!cleanRoom) {
+      addToast('Please enter a valid transfer link or room code', 'warning');
+      return;
     }
+    setErrorMessage('');
     signaling.stopPolling();
     closeWebRTC();
     initializedRef.current = true;
-    connect(roomVal);
+    connect(cleanRoom);
   };
 
   return (
@@ -743,29 +764,53 @@ export default function ReceivePage() {
                 <h2 style={{ color: '#ef4444', fontWeight: 800, fontSize: '1.25rem', marginBottom: '0.5rem' }}>
                   {status === 'invalid' ? 'Room Not Found' : status === 'full' ? 'Room Is Full' : 'Connection Failed'}
                 </h2>
-                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.5, wordBreak: 'break-word' }}>
                   {status === 'invalid'
-                    ? 'The transfer session has expired or the link is incorrect.'
+                    ? (errorMessage || `Transfer session "${roomId || prefilledRoomId}" was not found. Please verify the code or ask the sender to generate a transfer link first.`)
                     : status === 'full'
                     ? 'Another receiver is already connected to this transfer session.'
-                    : errorMessage || 'Could not establish connection. Please check your network and try again.'}
+                    : errorMessage || 'Could not establish connection. Please check your network and database settings.'}
                 </p>
-                <button
-                  onClick={() => {
-                    setStatus('idle');
-                    setPrefilledRoomId('');
-                    setManualLink('');
-                    setErrorMessage('');
-                  }}
-                  style={{
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '0.75rem', padding: '0.75rem 1.5rem',
-                    color: 'white', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
-                  }}
-                >
-                  Try Another Room
-                </button>
+
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  {(roomId || prefilledRoomId) && (
+                    <button
+                      onClick={() => {
+                        const target = roomId || prefilledRoomId;
+                        signaling.stopPolling();
+                        closeWebRTC();
+                        connect(target);
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        border: 'none',
+                        borderRadius: '0.75rem', padding: '0.75rem 1.5rem',
+                        color: 'white', fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer',
+                        boxShadow: '0 4px 16px rgba(16,185,129,0.3)',
+                      }}
+                    >
+                      Retry Connection
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      signaling.stopPolling();
+                      closeWebRTC();
+                      setStatus('idle');
+                      setPrefilledRoomId('');
+                      setManualLink('');
+                      setErrorMessage('');
+                    }}
+                    style={{
+                      background: 'rgba(255,255,255,0.1)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '0.75rem', padding: '0.75rem 1.5rem',
+                      color: 'white', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    Enter Different Room
+                  </button>
+                </div>
               </div>
             )}
           </div>

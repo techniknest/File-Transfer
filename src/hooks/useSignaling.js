@@ -75,7 +75,11 @@ export function useSignaling() {
     try {
       const res = await fetch('/api/signal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+        cache: 'no-store',
         body: JSON.stringify({
           roomId: roomIdRef.current,
           clientId: cid,
@@ -99,7 +103,11 @@ export function useSignaling() {
 
     try {
       const res = await fetch(
-        `/api/signal?roomId=${roomIdRef.current}&clientId=${cid}`
+        `/api/signal?roomId=${encodeURIComponent(roomIdRef.current)}&clientId=${encodeURIComponent(cid)}&_t=${Date.now()}`,
+        {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        }
       );
 
       if (!res.ok) {
@@ -176,7 +184,11 @@ export function useSignaling() {
 
     const res = await fetch('/api/rooms', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+      },
+      cache: 'no-store',
       body: JSON.stringify({ roomId: cleanRoomId, clientId: cid }),
     });
 
@@ -184,7 +196,7 @@ export function useSignaling() {
     try {
       data = await res.json();
     } catch {
-      throw new Error('Server returned an invalid response. Please check database connection.');
+      throw new Error('Server returned an invalid response. Please check database connection in Vercel settings.');
     }
 
     if (!res.ok || data.error) {
@@ -202,9 +214,13 @@ export function useSignaling() {
 
     while (attempts < maxAttempts) {
       try {
-        const res = await fetch(`/api/rooms/${cleanRoomId}/join`, {
+        const res = await fetch(`/api/rooms/${encodeURIComponent(cleanRoomId)}/join`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+          },
+          cache: 'no-store',
           body: JSON.stringify({ clientId: cid }),
         });
 
@@ -212,7 +228,7 @@ export function useSignaling() {
         try {
           data = await res.json();
         } catch {
-          throw new Error('Server returned an invalid response (possible database timeout).');
+          throw new Error('Server returned an invalid response (possible database connection timeout).');
         }
 
         if (!res.ok || data.error) {

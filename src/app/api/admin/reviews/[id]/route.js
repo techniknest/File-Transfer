@@ -16,7 +16,8 @@ export async function PATCH(request, { params }) {
     if (!session) return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
 
     await connectDB();
-    const { id } = params;
+    const resolvedParams = await params;
+    const { id } = resolvedParams || {};
     const { status } = await request.json();
 
     if (!['approved', 'rejected', 'pending'].includes(status)) {
@@ -43,7 +44,8 @@ export async function DELETE(request, { params }) {
     if (!session) return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
 
     await connectDB();
-    const { id } = params;
+    const resolvedParams = await params;
+    const { id } = resolvedParams || {};
 
     const review = await Review.findByIdAndDelete(id);
     if (!review) return NextResponse.json({ error: 'Review not found' }, { status: 404 });

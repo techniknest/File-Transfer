@@ -12,8 +12,9 @@ export async function PATCH(request, { params }) {
     }
 
     await connectDB();
+    const resolvedParams = await params;
+    const { id } = resolvedParams || {};
     const { status } = await request.json();
-    const { id } = params;
 
     if (!['pending', 'resolved'].includes(status)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });

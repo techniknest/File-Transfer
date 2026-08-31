@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Signal from '@/models/Signal';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+};
+
 export async function POST(request) {
   try {
     await connectDB();
@@ -13,7 +20,10 @@ export async function POST(request) {
     const roomId = rawRoomId ? rawRoomId.trim().toUpperCase() : '';
 
     if (!roomId || !clientId || !type) {
-      return NextResponse.json({ error: 'roomId, clientId, and type are required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'roomId, clientId, and type are required' },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
     const signal = await Signal.create({
@@ -23,10 +33,16 @@ export async function POST(request) {
       payload,
     });
 
-    return NextResponse.json({ success: true, signalId: signal._id });
+    return NextResponse.json(
+      { success: true, signalId: signal._id },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (error) {
     console.error('[API /signal POST] Error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }
 
@@ -39,7 +55,10 @@ export async function GET(request) {
     const clientId = searchParams.get('clientId');
 
     if (!roomId || !clientId) {
-      return NextResponse.json({ error: 'roomId and clientId are required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'roomId and clientId are required' },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
     // Find signals in this room NOT sent by this client and NOT yet consumed by this client
@@ -58,18 +77,23 @@ export async function GET(request) {
         { $addToSet: { consumedBy: clientId } }
       );
 
-      // Clean up signals that are old enough (>10s) and have been consumed —
-      // keeps MongoDB lean during active sessions without risking losing fresh signals
+      // Clean up signals that are old enough (>10s) and have been consumed
       const tenSecondsAgo = new Date(Date.now() - 10_000);
       await Signal.deleteMany({
         _id: { $in: signalIds },
         createdAt: { $lt: tenSecondsAgo },
-      }).catch(() => {}); // Non-blocking cleanup — don't fail the response
+      }).catch(() => {});
     }
 
-    return NextResponse.json({ signals });
+    return NextResponse.json(
+      { signals },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (error) {
     console.error('[API /signal GET] Error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }

@@ -18,7 +18,8 @@ export async function PATCH(request, { params }) {
     }
 
     await connectDB();
-    const { id } = params;
+    const resolvedParams = await params;
+    const { id } = resolvedParams || {};
     const body = await request.json();
     const { action } = body;
 
@@ -77,7 +78,8 @@ export async function DELETE(request, { params }) {
     }
 
     await connectDB();
-    const { id } = params;
+    const resolvedParams = await params;
+    const { id } = resolvedParams || {};
 
     const targetUser = await User.findById(id);
     if (!targetUser) {
