@@ -26,6 +26,8 @@ export async function POST(request) {
       );
     }
 
+    console.log(`[SIGNAL] Storing ${type} for room: ${roomId} from client: ${clientId}`);
+
     const signal = await Signal.create({
       roomId,
       fromClientId: clientId,
@@ -33,12 +35,14 @@ export async function POST(request) {
       payload,
     });
 
+    console.log(`[SIGNAL] ${type} stored successfully (ID: ${signal._id})`);
+
     return NextResponse.json(
       { success: true, signalId: signal._id },
       { headers: NO_CACHE_HEADERS }
     );
   } catch (error) {
-    console.error('[API /signal POST] Error:', error.message);
+    console.error('[SIGNAL] Error storing signal:', error.message);
     return NextResponse.json(
       { error: error.message },
       { status: 500, headers: NO_CACHE_HEADERS }

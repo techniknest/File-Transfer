@@ -70,11 +70,14 @@ export const authOptions = {
           metadata: { role: user.role, status: user.status },
         }).catch(() => {});
 
+        const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+        const isAdmin = user.role === 'admin' || (adminEmail && user.email?.toLowerCase() === adminEmail);
+
         return {
           id: user._id.toString(),
           name: user.name,
           email: user.email,
-          role: user.role,
+          role: isAdmin ? 'admin' : (user.role || 'user'),
           status: user.status,
         };
       },

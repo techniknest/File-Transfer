@@ -16,7 +16,14 @@ const NO_CACHE = {
 async function requireAdmin(request) {
   try {
     const session = await getServerSession(authOptions);
-    if (session && session.user?.role === 'admin') return session;
+    if (!session || !session.user) return null;
+    
+    const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    const userEmail = session.user.email?.trim().toLowerCase();
+    
+    if (session.user.role === 'admin' || (adminEmail && userEmail && userEmail === adminEmail)) {
+      return session;
+    }
   } catch (e) {
     console.error('[AdminLogs] getServerSession error:', e.message);
   }

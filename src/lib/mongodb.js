@@ -11,31 +11,43 @@ async function connectDB() {
 
   if (!MONGODB_URI) {
     throw new Error(
-      'MONGODB_URI is not defined in Vercel Environment Variables. Please set MONGODB_URI in Vercel Dashboard -> Settings -> Environment Variables.'
+      'MONGODB_URI is not defined. Set it in Vercel Dashboard → Settings → Environment Variables.'
     );
   }
 
-  // If connection is already open and ready
+  // Reuse existing live connection
   if (cached.conn && mongoose.connection.readyState === 1) {
     return cached.conn;
   }
 
-  // If disconnected or never connected, initialize connection promise
-  if (!cached.promise || mongoose.connection.readyState === 0) {
+  // Clear stale promise if connection dropped
+  if (mongoose.connection.readyState === 0) {
+    cached.promise = null;
+    cached.conn = null;
+  }
+
+  if (!cached.promise) {
     const opts = {
-      serverSelectionTimeoutMS: 8000,
-      connectTimeoutMS: 8000,
-      socketTimeoutMS: 30000,
-      // CRITICAL: maxPoolSize=1 for Vercel serverless.
-      // Each Lambda invocation is isolated. Setting >1 wastes RAM
-      // and causes the 96% heap usage you see in the health dashboard.
-      maxPoolSize: 1,
+      serverSelectionTimeoutMS: 10000, // 10s for Vercel cold starts
+      connectTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 1,   // CRITICAL: 1 connection per Lambda = low RAM usage
       minPoolSize: 0,
-      family: 4, // Force IPv4 to prevent SRV DNS resolution timeouts on Vercel
-      bufferCommands: false, // Fail immediately if not connected — don't mask errors
+      family: 4,        // Force IPv4 — prevents SRV DNS timeouts on AWS Lambda
+      // NOTE: bufferCommands defaults to true — keep it that way so operations
+      // queue briefly during connect rather than failing immediately on cold start
     };
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((m) => m);
+    cached.promise = mongoose.connect(MONGODB_URI, opts)
+      .then((m) => {
+        console.log('[MongoDB] Connected successfully');
+        return m;
+      })
+      .catch((err) => {
+        cached.promise = null;
+        cached.conn = null;
+        throw err;
+      });
   }
 
   try {
@@ -51,10 +63,11 @@ async function connectDB() {
       error.message?.includes('ServerSelectionError') ||
       error.message?.includes('ETIMEDOUT') ||
       error.message?.includes('querySrv ETIMEOUT') ||
-      error.message?.includes('buffering timed out')
+      error.message?.includes('buffering timed out') ||
+      error.message?.includes('ECONNREFUSED')
     ) {
       throw new Error(
-        'MongoDB Atlas connection failed. In MongoDB Atlas -> Network Access -> IP Access List, please add 0.0.0.0/0 (Allow Access from Anywhere).'
+        'MongoDB Atlas connection failed. Go to MongoDB Atlas → Network Access → IP Access List → Add 0.0.0.0/0 (Allow Access from Anywhere).'
       );
     }
     throw error;

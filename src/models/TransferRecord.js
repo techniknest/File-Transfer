@@ -7,7 +7,7 @@ const TransferRecordSchema = new mongoose.Schema({
   files: { type: Array, default: [] },
   totalSize: { type: Number, default: 0 },
   status: { type: String, default: 'completed' },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now, expires: 2592000 } // 30 days TTL
 });
 
 export default mongoose.models.TransferRecord ||

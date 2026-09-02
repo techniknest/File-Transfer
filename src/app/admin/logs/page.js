@@ -37,6 +37,7 @@ export default function AdminLogsPage() {
   const [roomFilter, setRoomFilter] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(5000);
+  const [fetchError, setFetchError] = useState('');
   const [selectedLog, setSelectedLog] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [clearing, setClearing] = useState(false);
@@ -65,10 +66,15 @@ export default function AdminLogsPage() {
         setLogs(data.logs || []);
         setTotalPages(data.pages || 1);
         if (data.stats) setStats(data.stats);
+        setFetchError('');
       } else {
-        console.error('[AdminLogs] Fetch failed:', res.status, await res.text().catch(() => ''));
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.error || `Failed to fetch logs (HTTP ${res.status})`;
+        setFetchError(msg);
+        console.error('[AdminLogs] Fetch failed:', res.status, msg);
       }
     } catch (err) {
+      setFetchError(err.message || 'Network error fetching logs');
       console.error('[AdminLogs] Fetch error:', err);
     } finally {
       setLoading(false);
@@ -290,6 +296,20 @@ export default function AdminLogsPage() {
           ))}
         </div>
       </div>
+
+      {fetchError && (
+        <div style={{
+          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
+          borderRadius: '0.75rem', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
+          color: '#f87171', fontSize: '0.9rem', fontWeight: 600,
+        }}>
+          <AlertTriangle size={20} />
+          <div style={{ flex: 1 }}>{fetchError}</div>
+          <button onClick={() => fetchLogs(true)} className="btn btn-ghost btn-sm" style={{ color: 'white', border: '1px solid rgba(239,68,68,0.4)' }}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Logs Table */}
       <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>

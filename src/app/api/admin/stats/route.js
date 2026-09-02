@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import TransferRecord from '@/models/TransferRecord';
-import ErrorLog from '@/models/ErrorLog';
+import SystemLog from '@/models/SystemLog';
 import { authOptions } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,10 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin') {
+    const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    const userEmail = session?.user?.email?.trim().toLowerCase();
+
+    if (!session || (session.user.role !== 'admin' && (!adminEmail || userEmail !== adminEmail))) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
@@ -57,7 +60,7 @@ export async function GET() {
         },
         { $sort: { _id: 1 } }
       ]),
-      ErrorLog.find({}).sort({ timestamp: -1 }).limit(10).lean(),
+      SystemLog.find({ level: 'error' }).sort({ timestamp: -1 }).limit(10).lean(),
     ]);
 
     // Build last 7 days chart data (fill in missing days with 0)

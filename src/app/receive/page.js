@@ -131,7 +131,8 @@ export default function ReceivePage() {
 
   const handleSetupDataChannel = useCallback((dc) => {
     dc.binaryType = 'arraybuffer';
-    console.log('[WebRTC] DataChannel connected:', dc.label);
+    console.log('[WebRTC] DataChannel connected — stopping signaling polling:', dc.label);
+    signaling.stopPolling();
     setStatus('receiving');
     addToast('Transfer started!', 'success');
 
@@ -298,7 +299,7 @@ export default function ReceivePage() {
     };
 
     dc.onerror = (err) => {
-      console.error('[DataChannel] Error:', err);
+      console.error('[DATA] Error:', err);
       logEvent({
         eventType: 'receiver_datachannel_error',
         level: 'error',
@@ -306,6 +307,10 @@ export default function ReceivePage() {
         roomId: roomIdRef.current,
         message: `DataChannel error on receiver: ${err.message || 'Unknown channel error'}`,
       });
+    };
+
+    dc.onclose = () => {
+      console.log('[DATA] Channel closed on Receiver');
     };
   }, [addToast, signaling]);
 
@@ -338,9 +343,15 @@ export default function ReceivePage() {
       await addCandidate(data.candidate);
     });
 
+    let answerCreated = false;
     signaling.on('offer', async (data) => {
       const offer = data?.offer;
       if (!offer) return;
+      if (answerCreated) {
+        console.log('[Receiver] Offer already processed, ignoring duplicate offer signal');
+        return;
+      }
+      answerCreated = true;
       console.log('[Receiver] Atomic Offer received — generating atomic Answer with ICE candidates');
 
       logEvent({

@@ -109,7 +109,13 @@ export default function Dashboard() {
     signaling.off('answer');
     signaling.off('ice-candidate');
 
+    let offerCreated = false;
     signaling.on('receiver-joined', async (joinData) => {
+      if (offerCreated) {
+        console.log('[Sender] Offer already generated for room, ignoring duplicate join signal');
+        return;
+      }
+      offerCreated = true;
       console.log('[Sender] Receiver joined — initiating atomic SDP Offer with ICE candidates');
       setTransferStatus('connecting');
 
@@ -156,8 +162,17 @@ export default function Dashboard() {
 
         activeDcRef.current = dc;
 
+        dc.onerror = (error) => {
+          console.error('[DATA] Error on Sender DataChannel:', error);
+        };
+
+        dc.onclose = () => {
+          console.log('[DATA] Channel closed on Sender');
+        };
+
         dc.onopen = async () => {
-          console.log('[Sender] DataChannel open — commencing transfer');
+          console.log('[DATA] Channel Open — stopping signaling polling and commencing transfer');
+          signaling.stopPolling();
           setTransferStatus('transferring');
 
           logEvent({

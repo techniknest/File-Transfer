@@ -10,7 +10,10 @@ export const revalidate = 0;
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin') {
+    const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    const userEmail = session?.user?.email?.trim().toLowerCase();
+
+    if (!session || (session.user?.role !== 'admin' && (!adminEmail || userEmail !== adminEmail))) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 

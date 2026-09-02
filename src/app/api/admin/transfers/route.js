@@ -6,8 +6,13 @@ import TransferRecord from '@/models/TransferRecord';
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
-  if (!session || session.user.role !== 'admin') return null;
-  return session;
+  if (!session || !session.user) return null;
+  const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const userEmail = session.user.email?.trim().toLowerCase();
+  if (session.user.role === 'admin' || (adminEmail && userEmail === adminEmail)) {
+    return session;
+  }
+  return null;
 }
 
 export async function GET(request) {

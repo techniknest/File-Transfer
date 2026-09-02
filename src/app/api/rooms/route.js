@@ -26,6 +26,8 @@ export async function POST(request) {
       );
     }
 
+    console.log('[ROOM] Creating room:', roomId, 'for clientId:', clientId);
+
     // Clean up any existing room with same ID
     await Room.deleteOne({ roomId });
 
@@ -37,6 +39,8 @@ export async function POST(request) {
       senderClientId: clientId,
       status: 'waiting',
     });
+
+    console.log('[ROOM] Room created in MongoDB:', room.roomId, 'status:', room.status);
 
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     await SystemLog.create({
@@ -54,7 +58,7 @@ export async function POST(request) {
       { headers: NO_CACHE_HEADERS }
     );
   } catch (error) {
-    console.error('[API /rooms POST] Error:', error.message);
+    console.error('[ROOM] Error creating room:', error.message);
     return NextResponse.json(
       { error: error.message },
       { status: 500, headers: NO_CACHE_HEADERS }

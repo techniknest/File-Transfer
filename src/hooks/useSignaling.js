@@ -1,10 +1,12 @@
 'use client';
 import { useRef, useEffect, useCallback } from 'react';
 
-// Polling constants — tuned for Vercel serverless latency
-const FAST_POLL_INTERVAL = 500;   // 500ms during initial handshake phase
-const STEADY_POLL_INTERVAL = 1200; // 1.2s once connection is established
-const FAST_POLL_COUNT = 20;        // Stay fast for 20 polls (10 seconds) to catch receiver joining
+// Polling intervals matching architecture recommendation:
+// - 2000ms when waiting for peer to join
+// - 400ms during WebRTC SDP / ICE negotiation
+// - STOP when connection established
+const WAITING_POLL_INTERVAL = 2000;
+const NEGOTIATING_POLL_INTERVAL = 400;
 const MAX_FAIL_STREAK = 3;
 
 export function useSignaling() {
@@ -12,9 +14,11 @@ export function useSignaling() {
   const roomIdRef = useRef(null);
   const listenersRef = useRef({});
   const pollingTimerRef = useRef(null);
-  const pollCountRef = useRef(0);
+  const isNegotiatingRef = useRef(false);
   const failStreakRef = useRef(0);
   const pollingActiveRef = useRef(false);
+
+  const processedSignalIdsRef = useRef(new Set());
 
   const getClientId = useCallback(() => {
     if (!clientIdRef.current) {
@@ -62,7 +66,7 @@ export function useSignaling() {
         try {
           cb(data);
         } catch (e) {
-          console.error('[Signaling] Handler error:', e);
+          console.error('[SIGNAL] Handler error:', e);
         }
       });
     }
@@ -72,6 +76,10 @@ export function useSignaling() {
   const sendSignal = useCallback(async (type, payload = {}) => {
     const cid = getClientId();
     if (!roomIdRef.current || !cid) return;
+
+    if (type === 'offer') console.log('[SIGNAL] Sending offer');
+    if (type === 'answer') console.log('[SIGNAL] Sending answer');
+
     try {
       const res = await fetch('/api/signal', {
         method: 'POST',
@@ -87,16 +95,19 @@ export function useSignaling() {
           payload,
         }),
       });
-      if (!res.ok) {
+      if (res.ok) {
+        if (type === 'offer') console.log('[SIGNAL] Offer stored');
+        if (type === 'answer') console.log('[SIGNAL] Answer stored');
+      } else {
         const err = await res.json().catch(() => ({}));
-        console.warn('[Signaling] Send failed:', err);
+        console.warn('[SIGNAL] Send failed:', err);
       }
     } catch (err) {
-      console.error('[Signaling] Send error:', err.message);
+      console.error('[SIGNAL] Send error:', err.message);
     }
   }, [getClientId]);
 
-  // ── Signal poll ──
+  // ── Signal poll with Deduplication ──
   const pollSignals = useCallback(async () => {
     const cid = getClientId();
     if (!roomIdRef.current || !cid || !pollingActiveRef.current) return;
@@ -112,7 +123,7 @@ export function useSignaling() {
 
       if (!res.ok) {
         failStreakRef.current += 1;
-        console.warn('[Signaling] Poll non-OK:', res.status, '(streak:', failStreakRef.current, ')');
+        console.warn('[SIGNAL] Poll non-OK:', res.status, '(streak:', failStreakRef.current, ')');
         return;
       }
 
@@ -121,13 +132,29 @@ export function useSignaling() {
       const data = await res.json();
       if (data.signals && data.signals.length > 0) {
         for (const sig of data.signals) {
-          console.log('[Signaling] Received signal:', sig.type);
+          const sigId = sig._id ? String(sig._id) : null;
+          if (sigId && processedSignalIdsRef.current.has(sigId)) {
+            continue; // Deduplicate
+          }
+          if (sigId) {
+            processedSignalIdsRef.current.add(sigId);
+          }
+
+          if (sig.type === 'offer') console.log('[SIGNAL] Receiving offer');
+          if (sig.type === 'answer') console.log('[SIGNAL] Receiving answer');
+          console.log(`[SIGNAL] Dispatching ${sig.type} (ID: ${sigId || 'none'})`);
+
+          // When receiver-joined or offer arrives, switch to fast 400ms polling for negotiation
+          if (sig.type === 'receiver-joined' || sig.type === 'offer') {
+            isNegotiatingRef.current = true;
+          }
+
           emitEvent(sig.type, sig.payload);
         }
       }
     } catch (err) {
       failStreakRef.current += 1;
-      console.warn('[Signaling] Poll error (streak:', failStreakRef.current, '):', err.message);
+      console.warn('[SIGNAL] Poll error (streak:', failStreakRef.current, '):', err.message);
     }
   }, [getClientId, emitEvent]);
 
@@ -135,15 +162,7 @@ export function useSignaling() {
   const scheduleNextPoll = useCallback(() => {
     if (!pollingActiveRef.current) return;
 
-    pollCountRef.current += 1;
-    const isInFastPhase = pollCountRef.current <= FAST_POLL_COUNT;
-
-    let delay;
-    if (failStreakRef.current >= MAX_FAIL_STREAK) {
-      delay = Math.min(STEADY_POLL_INTERVAL * failStreakRef.current, 8000);
-    } else {
-      delay = isInFastPhase ? FAST_POLL_INTERVAL : STEADY_POLL_INTERVAL;
-    }
+    const delay = isNegotiatingRef.current ? NEGOTIATING_POLL_INTERVAL : WAITING_POLL_INTERVAL;
 
     pollingTimerRef.current = setTimeout(async () => {
       await pollSignals();
@@ -151,11 +170,12 @@ export function useSignaling() {
     }, delay);
   }, [pollSignals]);
 
-  const startPolling = useCallback((roomId) => {
+  const startPolling = useCallback((roomId, startInNegotiating = false) => {
     roomIdRef.current = (roomId || '').trim().toUpperCase();
-    pollCountRef.current = 0;
+    isNegotiatingRef.current = startInNegotiating;
     failStreakRef.current = 0;
     pollingActiveRef.current = true;
+    processedSignalIdsRef.current.clear();
 
     if (pollingTimerRef.current) {
       clearTimeout(pollingTimerRef.current);
@@ -166,19 +186,21 @@ export function useSignaling() {
   }, [pollSignals, scheduleNextPoll]);
 
   const stopPolling = useCallback(() => {
+    console.log('[SIGNAL] Polling stopped for room:', roomIdRef.current);
     pollingActiveRef.current = false;
     if (pollingTimerRef.current) {
       clearTimeout(pollingTimerRef.current);
       pollingTimerRef.current = null;
     }
     roomIdRef.current = null;
-    pollCountRef.current = 0;
     failStreakRef.current = 0;
   }, []);
 
   // ── Room management ──
   const createRoom = useCallback(async (roomId) => {
     const cleanRoomId = (roomId || '').trim().toUpperCase();
+    console.log('[ROOM] Creating room');
+    console.log('[ROOM] Room ID:', cleanRoomId);
     roomIdRef.current = cleanRoomId;
     const cid = getClientId();
 
@@ -196,8 +218,10 @@ export function useSignaling() {
     try {
       data = await res.json();
     } catch {
-      throw new Error('Server returned an invalid response. Please check database connection in Vercel settings.');
+      throw new Error('Server returned an invalid response. Please check database connection.');
     }
+
+    console.log('[ROOM] API response:', data);
 
     if (!res.ok || data.error) {
       throw new Error(data.error || 'Failed to create room');
@@ -207,6 +231,7 @@ export function useSignaling() {
 
   const joinRoom = useCallback(async (roomId) => {
     const cleanRoomId = (roomId || '').trim().toUpperCase();
+    console.log('[ROOM] Joining room:', cleanRoomId);
     roomIdRef.current = cleanRoomId;
     const cid = getClientId();
     let attempts = 0;
@@ -228,32 +253,30 @@ export function useSignaling() {
         try {
           data = await res.json();
         } catch {
-          throw new Error('Server returned an invalid response (possible database connection timeout).');
+          throw new Error('Server returned an invalid response.');
         }
+
+        console.log('[ROOM] Join API response:', data);
 
         if (!res.ok || data.error) {
           let errorMsg = data.error || 'Failed to join room';
-          if (errorMsg.includes('whitelist') || errorMsg.includes('MongoDB Atlas')) {
-            errorMsg = 'MongoDB Error: Vercel IP is blocked. Please allow all IPs (0.0.0.0/0) in MongoDB Atlas Network Access settings.';
-          }
-
           const err = new Error(errorMsg);
           err.code = data.code || 'UNKNOWN';
-
           if (res.status === 404 || res.status === 400) {
             throw err;
           }
           throw err;
         }
 
-        startPolling(cleanRoomId);
+        // Receiver starts in fast negotiating mode (400ms) to grab SDP offer quickly
+        startPolling(cleanRoomId, true);
         return data;
       } catch (err) {
         attempts++;
         if (err.code === 'ROOM_FULL' || err.code === 'ROOM_NOT_FOUND' || attempts >= maxAttempts) {
           throw err;
         }
-        console.warn(`[Signaling] joinRoom attempt ${attempts} failed, retrying in 1s...`);
+        console.warn(`[ROOM] joinRoom attempt ${attempts} failed, retrying in 1s...`);
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
