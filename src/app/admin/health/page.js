@@ -10,16 +10,20 @@ export default function AdminHealthPage() {
   const [logLevel, setLogLevel] = useState('all');
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const fetchHealth = async () => {
     try {
       const res = await fetch('/api/admin/health');
       const data = await res.json();
-      if (!data.error) {
+      if (res.ok && !data.error) {
         setHealth(data);
+        setError('');
+      } else {
+        setError(data.error || `HTTP ${res.status}: Failed to fetch health metrics`);
       }
     } catch (e) {
-      showToast('Failed to load system health metrics', 'error');
+      setError('Failed to load system health metrics: ' + e.message);
     }
   };
 
@@ -32,7 +36,7 @@ export default function AdminHealthPage() {
         setLogs(data.logs || []);
       }
     } catch (e) {
-      showToast('Failed to load activity logs', 'error');
+      console.warn('Failed to load activity logs:', e.message);
     } finally {
       setLogsLoading(false);
     }
@@ -102,6 +106,19 @@ export default function AdminHealthPage() {
           <RotateCcw size={14} /> Refresh Metrics
         </button>
       </div>
+
+      {error && (
+        <div style={{
+          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
+          borderRadius: '0.75rem', padding: '1rem 1.25rem', marginBottom: '2rem',
+          color: '#f87171', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+        }}>
+          <span>{error}</span>
+          <button onClick={fetchHealth} className="btn btn-ghost btn-sm" style={{ color: 'white', border: '1px solid rgba(239,68,68,0.4)' }}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Grid of server indicators */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
