@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [currentFile, setCurrentFile] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [incomingRequest, setIncomingRequest] = useState(null);
 
   // Receive state
   const [receiveLink, setReceiveLink] = useState('');
@@ -47,6 +48,7 @@ export default function Dashboard() {
   const roomIdRef = useRef('');
   const activeDcRef = useRef(null);
   const isCancelledRef = useRef(false);
+  const resumeOffsetsRef = useRef({});
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -106,17 +108,20 @@ export default function Dashboard() {
 
     // Register signaling listeners before creating room and starting polling
     signaling.off('receiver-joined');
+    signaling.off('transfer-request');
+    signaling.off('transfer-resume');
     signaling.off('answer');
     signaling.off('ice-candidate');
 
     let offerCreated = false;
-    signaling.on('receiver-joined', async (joinData) => {
+
+    const startOfferGeneration = async () => {
       if (offerCreated) {
-        console.log('[Sender] Offer already generated for room, ignoring duplicate join signal');
+        console.log('[Sender] Offer already generated for room, ignoring duplicate initiation');
         return;
       }
       offerCreated = true;
-      console.log('[Sender] Receiver joined — initiating atomic SDP Offer with ICE candidates');
+      console.log('[Sender] Permission granted — generating atomic SDP Offer with ICE candidates');
       setTransferStatus('connecting');
 
       logEvent({
@@ -124,9 +129,8 @@ export default function Dashboard() {
         level: 'info',
         category: 'webrtc',
         roomId: id,
-        message: `Sender detected receiver joined room ${id}. Generating atomic SDP offer...`,
+        message: `Sender generating atomic SDP offer for room ${id}...`,
         userEmail: session?.user?.email,
-        metadata: joinData,
       });
 
       try {
@@ -186,12 +190,16 @@ export default function Dashboard() {
           });
 
           await sendFiles(filesRef.current, dc, {
-            onFileStart: (fileName) => setCurrentFile(fileName),
+            onFileStart: (fileName, isResume) => {
+              setCurrentFile(fileName);
+              if (isResume) showToast(`Resuming ${fileName}...`, 'info');
+            },
             onProgress: (p) => setProgress(p),
             onSpeed: (spd, etaVal) => {
               setSpeed(spd);
               setEta(etaVal);
             },
+            resumeOffsets: resumeOffsetsRef.current || {},
             onComplete: async () => {
               setTransferStatus('done');
               setProgress(100);
@@ -253,6 +261,56 @@ export default function Dashboard() {
           metadata: { stack: err.stack },
         });
       }
+    };
+
+    // Listen for resume parameters if receiver had partial chunks
+    signaling.on('transfer-resume', (resumeData) => {
+      console.log('[Sender] Received transfer resume request:', resumeData);
+      if (resumeData?.resumeOffsets) {
+        resumeOffsetsRef.current = resumeData.resumeOffsets;
+      }
+    });
+
+    // Listen for incoming transfer requests (Permission Flow)
+    signaling.on('transfer-request', (reqData) => {
+      console.log('[Sender] Incoming transfer request received:', reqData);
+      setIncomingRequest({
+        roomId: id,
+        clientInfo: reqData || {},
+        onAllow: async () => {
+          setIncomingRequest(null);
+          await signaling.sendSignal('transfer-allow', { approved: true, roomId: id });
+          startOfferGeneration();
+        },
+        onDecline: async () => {
+          setIncomingRequest(null);
+          await signaling.sendSignal('transfer-decline', { approved: false, roomId: id, reason: 'Sender declined the request' });
+          showToast('Transfer request declined', 'info');
+        }
+      });
+    });
+
+    // Fallback: if receiver joined directly without sending explicit transfer-request
+    signaling.on('receiver-joined', (joinData) => {
+      console.log('[Sender] Receiver joined event:', joinData);
+      // If modal is not already prompt, show permission request
+      setIncomingRequest((prev) => {
+        if (prev) return prev;
+        return {
+          roomId: id,
+          clientInfo: joinData || {},
+          onAllow: async () => {
+            setIncomingRequest(null);
+            await signaling.sendSignal('transfer-allow', { approved: true, roomId: id });
+            startOfferGeneration();
+          },
+          onDecline: async () => {
+            setIncomingRequest(null);
+            await signaling.sendSignal('transfer-decline', { approved: false, roomId: id, reason: 'Sender declined the request' });
+            showToast('Transfer request declined', 'info');
+          }
+        };
+      });
     });
 
     signaling.on('answer', async (data) => {
@@ -638,6 +696,118 @@ export default function Dashboard() {
         currentFile={currentFile}
         onAddFiles={handleAddMoreFiles}
       />
+
+      {/* ── INCOMING TRANSFER REQUEST / PERMISSION MODAL ── */}
+      {incomingRequest && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 99999,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1.5rem',
+          animation: 'fadeIn 0.2s ease',
+        }}>
+          <div style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid rgba(245,158,11,0.4)',
+            borderRadius: '1.5rem',
+            width: '100%',
+            maxWidth: '520px',
+            padding: '2rem',
+            boxShadow: '0 25px 80px rgba(0,0,0,0.7), 0 0 40px rgba(245,158,11,0.15)',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1.25rem',
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(245,158,11,0.15)',
+              border: '2px solid rgba(245,158,11,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              animation: 'pulse 2s infinite',
+            }}>
+              <Shield size={32} color="#f59e0b" />
+            </div>
+
+            <div>
+              <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'white', marginBottom: '0.5rem' }}>
+                Incoming Transfer Request
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.5, margin: 0 }}>
+                A receiver has connected to room <strong style={{ color: '#10b981', fontFamily: 'monospace' }}>{incomingRequest.roomId}</strong> and requested permission to download your files.
+              </p>
+            </div>
+
+            <div style={{
+              width: '100%',
+              background: 'var(--bg-glass)',
+              border: '1px solid var(--border-default)',
+              borderRadius: '1rem',
+              padding: '1rem',
+              textAlign: 'left',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Files to Send:</span>
+                <span style={{ color: 'white', fontWeight: 700 }}>{files.length} file(s) ({formatBytes(files.reduce((a, f) => a + f.size, 0))})</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Receiver Device:</span>
+                <span style={{ color: 'var(--text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {incomingRequest.clientInfo?.device ? 'Web Browser' : 'Connected Peer'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', width: '100%', marginTop: '0.5rem' }}>
+              <button
+                onClick={incomingRequest.onDecline}
+                className="btn btn-ghost"
+                style={{
+                  flex: 1,
+                  padding: '0.9rem',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                ❌ Decline
+              </button>
+              <button
+                onClick={incomingRequest.onAllow}
+                className="btn btn-primary"
+                style={{
+                  flex: 1.4,
+                  padding: '0.9rem',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: 'none',
+                  borderRadius: '0.75rem',
+                  fontWeight: 800,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 8px 24px rgba(16,185,129,0.3)',
+                }}
+              >
+                ✅ Allow Transfer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

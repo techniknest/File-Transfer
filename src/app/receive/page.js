@@ -6,7 +6,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import {
   FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File,
-  Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info
+  Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info, Shield
 } from 'lucide-react';
 import { logEvent } from '@/lib/logger';
 
@@ -103,25 +103,8 @@ export default function ReceivePage() {
   const filesRef = useRef([]);
   const initializedRef = useRef(false);
 
-  // Streaming refs for disk writing
-  const streamRef = useRef(null);
-  const chunkQueueRef = useRef([]);
-  const isWritingRef = useRef(false);
-
-  const processQueue = async () => {
-    if (isWritingRef.current || !streamRef.current || streamRef.current === 'FALLBACK') return;
-    isWritingRef.current = true;
-    try {
-      while (chunkQueueRef.current.length > 0) {
-        const chunk = chunkQueueRef.current.shift();
-        await streamRef.current.write(chunk);
-      }
-    } catch (e) {
-      console.error('[Disk] Write error:', e);
-    } finally {
-      isWritingRef.current = false;
-    }
-  };
+  // Chunk storage map: fileIndex -> array of ArrayBuffer chunks
+  const fileChunksRef = useRef({});
 
   const addToast = useCallback((message, type = 'info', duration = 3500) => {
     const id = Date.now() + Math.random();
@@ -134,7 +117,7 @@ export default function ReceivePage() {
     console.log('[WebRTC] DataChannel connected — stopping signaling polling:', dc.label);
     signaling.stopPolling();
     setStatus('receiving');
-    addToast('Transfer started!', 'success');
+    addToast('Transfer connection active!', 'success');
 
     dc.onmessage = (ev) => {
       if (typeof ev.data === 'string') {
@@ -156,10 +139,10 @@ export default function ReceivePage() {
 
         if (msg.type === 'meta') {
           metaRef.current = msg;
-          chunksRef.current = [];
-          chunkQueueRef.current = [];
-          streamRef.current = null;
-          isWritingRef.current = false;
+          const fIdx = msg.fileIndex ?? 0;
+          if (!fileChunksRef.current[fIdx]) {
+            fileChunksRef.current[fIdx] = [];
+          }
           setStats((prev) => ({ ...prev, currentFile: msg.fileName }));
 
           logEvent({
@@ -167,96 +150,72 @@ export default function ReceivePage() {
             level: 'info',
             category: 'transfer',
             roomId: roomIdRef.current,
-            message: `Receiver started receiving file: ${msg.fileName} (${formatBytes(msg.fileSize)})`,
+            message: `Receiver receiving file: ${msg.fileName} (${formatBytes(msg.fileSize)})`,
             metadata: msg,
           });
-
-          if ('showSaveFilePicker' in window) {
-            (async () => {
-              try {
-                const handle = await window.showSaveFilePicker({ suggestedName: msg.fileName });
-                streamRef.current = await handle.createWritable();
-                addToast(`Streaming ${msg.fileName} directly to disk...`, 'info', 3000);
-                processQueue();
-              } catch (e) {
-                console.warn('[Disk] File picker cancelled or failed', e);
-                streamRef.current = 'FALLBACK';
-              }
-            })();
-          } else {
-            if (msg.fileSize > 500 * 1024 * 1024) {
-              addToast('Note: Browser will assemble file in memory before saving.', 'info', 4000);
-            }
-            streamRef.current = 'FALLBACK';
-          }
         }
 
         if (msg.type === 'file-end') {
           const meta = metaRef.current;
           if (!meta) return;
 
+          const fIdx = msg.fileIndex ?? 0;
+          const rawChunks = fileChunksRef.current[fIdx] || [];
+          // Filter out undefined holes if any
+          const validChunks = [];
+          for (let i = 0; i < (msg.totalChunks || rawChunks.length); i++) {
+            if (rawChunks[i]) validChunks.push(rawChunks[i]);
+          }
+
+          const blob = new Blob(validChunks, { type: meta.fileType || 'application/octet-stream' });
+          const blobUrl = URL.createObjectURL(blob);
+
+          console.log(`[DATA] Assembled file ${meta.fileName}: ${blob.size} bytes (Expected: ${meta.fileSize} bytes)`);
+
+          const fileEntry = {
+            name: meta.fileName,
+            url: blobUrl,
+            size: blob.size,
+            expectedSize: meta.fileSize,
+            isComplete: blob.size >= meta.fileSize,
+          };
+
+          filesRef.current = [...filesRef.current, fileEntry];
+          setReceivedFiles([...filesRef.current]);
+          setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+          addToast(`Received: ${meta.fileName} (${formatBytes(blob.size)})`, 'success', 5000);
+
           logEvent({
             eventType: 'receiver_file_completed',
             level: 'success',
             category: 'transfer',
             roomId: roomIdRef.current,
-            message: `Receiver completed downloading file: ${meta.fileName} (${formatBytes(meta.fileSize)})`,
-            metadata: meta,
+            message: `File download complete: ${meta.fileName} (${formatBytes(blob.size)})`,
+            metadata: { fileName: meta.fileName, size: blob.size, totalChunks: validChunks.length },
           });
 
-          if (streamRef.current && streamRef.current !== 'FALLBACK') {
-            const finishDiskWrite = async () => {
-              while (chunkQueueRef.current.length > 0 || isWritingRef.current) {
-                await new Promise((r) => setTimeout(r, 40));
-              }
-              try {
-                await streamRef.current.close();
-              } catch (e) {
-                console.warn(e);
-              }
-              streamRef.current = null;
-
-              const fileEntry = { name: meta.fileName, url: '#', size: meta.fileSize };
-              filesRef.current = [...filesRef.current, fileEntry];
-              setReceivedFiles([...filesRef.current]);
-              setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-              addToast(`Saved to disk: ${meta.fileName}`, 'success', 4000);
-            };
-            finishDiskWrite();
-          } else {
-            const chunksCopy = [...chunksRef.current];
-            chunksRef.current = [];
-
-            const blob = new Blob(chunksCopy, { type: meta.fileType || 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
-            const fileEntry = { name: meta.fileName, url, size: blob.size };
-
-            filesRef.current = [...filesRef.current, fileEntry];
-            setReceivedFiles([...filesRef.current]);
-            setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-            addToast(`Received: ${meta.fileName}`, 'success', 4000);
-
-            // Trigger browser download
-            setTimeout(() => {
-              try {
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = meta.fileName;
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => document.body.removeChild(a), 2000);
-              } catch (err) {
-                console.warn('[Download] Auto-download blocked:', err);
-              }
-            }, 100);
-          }
+          // Trigger automatic browser download
+          setTimeout(() => {
+            try {
+              const a = document.createElement('a');
+              a.style.display = 'none';
+              a.href = blobUrl;
+              a.download = meta.fileName;
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(() => {
+                try { document.body.removeChild(a); } catch (_) {}
+              }, 2000);
+            } catch (err) {
+              console.warn('[Download] Auto download trigger blocked:', err);
+            }
+          }, 80);
         }
 
         if (msg.type === 'session-end') {
           setStatus('done');
           setStats((prev) => ({ ...prev, progress: 100 }));
-          addToast('All files received! Check your Downloads folder.', 'success', 6000);
+          addToast('All files successfully transferred!', 'success', 6000);
           signaling.stopPolling();
 
           logEvent({
@@ -268,14 +227,25 @@ export default function ReceivePage() {
           });
         }
       } else {
-        // Binary ArrayBuffer chunk
-        trackRef.current.receivedBytes += ev.data.byteLength;
+        // Binary framed chunk: 4 bytes fileIndex + 4 bytes chunkIndex + chunkPayload
+        const dataBuffer = ev.data;
+        if (dataBuffer.byteLength >= 8) {
+          const view = new DataView(dataBuffer);
+          const fileIndex = view.getUint32(0, false);
+          const chunkIndex = view.getUint32(4, false);
+          const chunkPayload = dataBuffer.slice(8);
 
-        if (streamRef.current !== 'FALLBACK') {
-          chunkQueueRef.current.push(ev.data);
-          processQueue();
+          if (!fileChunksRef.current[fileIndex]) {
+            fileChunksRef.current[fileIndex] = [];
+          }
+          fileChunksRef.current[fileIndex][chunkIndex] = chunkPayload;
+          trackRef.current.receivedBytes += chunkPayload.byteLength;
         } else {
-          chunksRef.current.push(ev.data);
+          // Fallback un-framed raw chunk
+          const fIdx = metaRef.current?.fileIndex ?? 0;
+          if (!fileChunksRef.current[fIdx]) fileChunksRef.current[fIdx] = [];
+          fileChunksRef.current[fIdx].push(dataBuffer);
+          trackRef.current.receivedBytes += dataBuffer.byteLength;
         }
 
         const now = Date.now();
@@ -293,7 +263,13 @@ export default function ReceivePage() {
           trackRef.current.lastTime = now;
           trackRef.current.lastBytes = trackRef.current.receivedBytes;
 
-          setStats((prev) => ({ ...prev, progress, speed, eta }));
+          setStats((prev) => ({
+            ...prev,
+            progress,
+            speed,
+            eta,
+            receivedBytes: trackRef.current.receivedBytes,
+          }));
         }
       }
     };
@@ -319,11 +295,10 @@ export default function ReceivePage() {
     setToasts([]);
     roomIdRef.current = targetRoomId;
     setRoomId(targetRoomId);
-    setStatus('connecting');
+    setStatus('waiting-permission');
 
     trackRef.current = { totalBytes: 0, receivedBytes: 0, lastTime: Date.now(), lastBytes: 0 };
     filesRef.current = [];
-    chunksRef.current = [];
     metaRef.current = null;
 
     logEvent({
@@ -335,7 +310,23 @@ export default function ReceivePage() {
     });
 
     signaling.off('offer');
+    signaling.off('transfer-allow');
+    signaling.off('transfer-decline');
     signaling.off('ice-candidate');
+
+    // Handle sender permission approval
+    signaling.on('transfer-allow', (allowData) => {
+      console.log('[Receiver] Sender allowed transfer:', allowData);
+      setStatus('connecting');
+      addToast('Sender approved request! Establishing connection...', 'success');
+    });
+
+    // Handle sender declining transfer
+    signaling.on('transfer-decline', (declineData) => {
+      console.log('[Receiver] Sender declined transfer:', declineData);
+      setStatus('declined');
+      addToast('Sender declined the transfer request.', 'error', 6000);
+    });
 
     // Trickle ICE: apply sender's ICE candidates as they arrive
     signaling.on('ice-candidate', async (data) => {
@@ -352,6 +343,7 @@ export default function ReceivePage() {
         return;
       }
       answerCreated = true;
+      setStatus('connecting');
       console.log('[Receiver] Atomic Offer received — generating atomic Answer with ICE candidates');
 
       logEvent({
@@ -416,15 +408,34 @@ export default function ReceivePage() {
 
     try {
       await signaling.joinRoom(targetRoomId);
-      setStatus('waiting');
-      addToast('Connected! Waiting for sender to begin...', 'info');
+
+      // Calculate any resume offsets from already present chunks in memory
+      const resumeOffsets = {};
+      Object.keys(fileChunksRef.current).forEach((k) => {
+        if (fileChunksRef.current[k]?.length > 0) {
+          resumeOffsets[k] = fileChunksRef.current[k].length;
+        }
+      });
+
+      // Send explicit transfer request with optional resume data
+      await signaling.sendSignal('transfer-request', {
+        device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser',
+        resumeOffsets,
+        timestamp: Date.now(),
+      });
+
+      if (Object.keys(resumeOffsets).length > 0) {
+        await signaling.sendSignal('transfer-resume', { resumeOffsets });
+      }
+
+      addToast('Transfer request sent. Waiting for sender approval...', 'info');
 
       logEvent({
         eventType: 'receiver_joined_success',
         level: 'success',
         category: 'room',
         roomId: targetRoomId,
-        message: `Receiver successfully joined room ${targetRoomId}. Waiting for sender's SDP offer...`,
+        message: `Receiver successfully joined room ${targetRoomId} and requested transfer permission.`,
       });
     } catch (err) {
       const msg = err.message || 'Could not connect to room. Please try again.';
@@ -643,6 +654,114 @@ export default function ReceivePage() {
                     </form>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ──────────── WAITING-PERMISSION state ──────────── */}
+            {status === 'waiting-permission' && (
+              <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'rgba(245,158,11,0.15)',
+                  border: '2px solid rgba(245,158,11,0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1.25rem',
+                  animation: 'pulse 1.8s infinite',
+                }}>
+                  <Shield size={32} color="#f59e0b" />
+                </div>
+                <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.3rem', marginBottom: '0.4rem' }}>
+                  Permission Requested
+                </h2>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                  Connected to room <code style={{ color: '#10b981', fontWeight: 700 }}>{roomId}</code>.
+                  <br />Waiting for the sender to approve your transfer request...
+                </p>
+
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  background: 'rgba(245,158,11,0.1)',
+                  border: '1px solid rgba(245,158,11,0.3)',
+                  borderRadius: '999px',
+                  padding: '0.4rem 1rem',
+                  color: '#f59e0b',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  marginBottom: '1.5rem',
+                }}>
+                  <Spinner color="#f59e0b" size={14} />
+                  <span>Awaiting Sender Approval</span>
+                </div>
+
+                <br />
+                <button
+                  onClick={() => { signaling.stopPolling(); closeWebRTC(); setStatus('idle'); }}
+                  style={{
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '0.75rem',
+                    padding: '0.5rem 1.25rem',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* ──────────── DECLINED state ──────────── */}
+            {status === 'declined' && (
+              <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'rgba(239,68,68,0.15)',
+                  border: '2px solid rgba(239,68,68,0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1.25rem',
+                }}>
+                  <XCircle size={36} color="#ef4444" />
+                </div>
+                <h2 style={{ color: '#ef4444', fontWeight: 800, fontSize: '1.3rem', marginBottom: '0.4rem' }}>
+                  Request Declined
+                </h2>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                  The sender declined your transfer request for room <code style={{ color: '#10b981', fontWeight: 700 }}>{roomId}</code>.
+                </p>
+
+                <button
+                  onClick={() => {
+                    signaling.stopPolling();
+                    closeWebRTC();
+                    setStatus('idle');
+                    setPrefilledRoomId('');
+                    setManualLink('');
+                  }}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '0.75rem',
+                    padding: '0.75rem 1.5rem',
+                    color: 'white',
+                    fontSize: '0.875rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Enter Another Code
+                </button>
               </div>
             )}
 

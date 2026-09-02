@@ -144,8 +144,13 @@ export function useSignaling() {
           if (sig.type === 'answer') console.log('[SIGNAL] Receiving answer');
           console.log(`[SIGNAL] Dispatching ${sig.type} (ID: ${sigId || 'none'})`);
 
-          // When receiver-joined or offer arrives, switch to fast 400ms polling for negotiation
-          if (sig.type === 'receiver-joined' || sig.type === 'offer') {
+          // When receiver-joined, transfer-request, transfer-allow, or offer arrives, switch to fast 400ms polling for negotiation
+          if (
+            sig.type === 'receiver-joined' ||
+            sig.type === 'transfer-request' ||
+            sig.type === 'transfer-allow' ||
+            sig.type === 'offer'
+          ) {
             isNegotiatingRef.current = true;
           }
 

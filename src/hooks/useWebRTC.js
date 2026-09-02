@@ -305,10 +305,10 @@ export function useWebRTC() {
     });
 
   /**
-   * Stream files across the RTCDataChannel with backpressure flow control (Section 18 & 19)
+   * Stream files across the RTCDataChannel with binary framing and backpressure flow control (Sections 18, 19, 20)
    */
   const sendFiles = useCallback(async (files, dc, callbacks = {}) => {
-    const { onProgress, onSpeed, onFileStart, onComplete, isCancelled } = callbacks;
+    const { onProgress, onSpeed, onFileStart, onComplete, isCancelled, resumeOffsets = {} } = callbacks;
 
     if (!dc || dc.readyState !== 'open') {
       console.error('[DATA] Cannot send files: DataChannel is not open (readyState:', dc?.readyState, ')');
@@ -319,6 +319,13 @@ export function useWebRTC() {
     let sentBytes = 0;
     let lastTime = Date.now();
     let lastBytes = 0;
+
+    // Account for already transferred chunks if resuming
+    for (let f = 0; f < files.length; f++) {
+      const startChunk = resumeOffsets[f] || 0;
+      sentBytes += Math.min(startChunk * CHUNK_SIZE, files[f].size);
+    }
+    lastBytes = sentBytes;
 
     // Control message: session-info
     dc.send(
@@ -334,8 +341,9 @@ export function useWebRTC() {
 
       const file = files[f];
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const startChunkIndex = resumeOffsets[f] || 0;
 
-      if (onFileStart) onFileStart(file.name);
+      if (onFileStart) onFileStart(file.name, startChunkIndex > 0);
 
       // Control message: meta
       dc.send(
@@ -347,15 +355,23 @@ export function useWebRTC() {
           totalChunks,
           fileIndex: f,
           totalFiles: files.length,
+          startChunkIndex,
         })
       );
 
-      for (let i = 0; i < totalChunks; i++) {
+      for (let i = startChunkIndex; i < totalChunks; i++) {
         if (isCancelled && isCancelled()) return;
 
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = await readChunk(file, start, end);
+        const chunkData = await readChunk(file, start, end);
+
+        // Binary frame: 4 bytes fileIndex + 4 bytes chunkIndex + chunkData
+        const packet = new Uint8Array(8 + chunkData.byteLength);
+        const view = new DataView(packet.buffer);
+        view.setUint32(0, f, false); // big-endian
+        view.setUint32(4, i, false); // big-endian
+        packet.set(new Uint8Array(chunkData), 8);
 
         // Backpressure check (Section 19): pause if buffer exceeds 1MB
         while (dc.bufferedAmount > 1024 * 1024) {
@@ -363,7 +379,7 @@ export function useWebRTC() {
           await new Promise((r) => setTimeout(r, 40));
         }
 
-        dc.send(chunk);
+        dc.send(packet.buffer);
         sentBytes += end - start;
 
         const now = Date.now();
@@ -382,7 +398,7 @@ export function useWebRTC() {
       }
 
       // Control message: file-end
-      dc.send(JSON.stringify({ type: 'file-end', fileIndex: f }));
+      dc.send(JSON.stringify({ type: 'file-end', fileIndex: f, totalChunks }));
     }
 
     // Control message: session-end

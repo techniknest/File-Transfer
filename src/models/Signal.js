@@ -12,7 +12,17 @@ const SignalSchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['offer', 'answer', 'ice-candidate', 'receiver-joined', 'peer-disconnected'],
+    enum: [
+      'offer',
+      'answer',
+      'ice-candidate',
+      'receiver-joined',
+      'peer-disconnected',
+      'transfer-request',
+      'transfer-allow',
+      'transfer-decline',
+      'transfer-resume',
+    ],
   },
   payload: {
     type: mongoose.Schema.Types.Mixed,

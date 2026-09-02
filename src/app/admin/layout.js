@@ -5,17 +5,18 @@ import { useEffect, useState } from 'react';
 import { useTheme } from '../components/ThemeProvider';
 import {
   LayoutDashboard, Users, FileText, Activity, Shield,
-  Moon, Sun, ArrowLeft, Menu, Star, Settings, MessageSquare
+  Moon, Sun, ArrowLeft, Menu, Star, Settings, MessageSquare,
+  ScrollText, HeartPulse
 } from 'lucide-react';
 
 const ADMIN_NAV = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={20} />, exact: true },
-  { href: '/admin/logs', label: 'System Logs', icon: <Activity size={20} /> },
+  { href: '/admin/logs', label: 'System Logs', icon: <ScrollText size={20} />, highlight: true },
   { href: '/admin/users', label: 'Users', icon: <Users size={20} /> },
   { href: '/admin/transfers', label: 'Transfers', icon: <FileText size={20} /> },
   { href: '/admin/reviews', label: 'Reviews', icon: <Star size={20} /> },
   { href: '/admin/complaints', label: 'Complaints', icon: <MessageSquare size={20} /> },
-  { href: '/admin/health', label: 'System Health', icon: <Activity size={20} /> },
+  { href: '/admin/health', label: 'System Health', icon: <HeartPulse size={20} /> },
   { href: '/admin/settings', label: 'Settings', icon: <Settings size={20} /> },
 ];
 
@@ -26,12 +27,14 @@ export default function AdminLayout({ children }) {
   const { theme, toggleTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const isAdmin = session?.user?.role === 'admin';
+
   useEffect(() => {
     if (status === 'unauthenticated') { router.push('/login'); return; }
-    if (status === 'authenticated' && session?.user?.role !== 'admin') {
+    if (status === 'authenticated' && !isAdmin) {
       router.push('/dashboard');
     }
-  }, [status, session, router]);
+  }, [status, isAdmin, router]);
 
   // Show spinner while loading session
   if (status === 'loading') {
@@ -47,7 +50,7 @@ export default function AdminLayout({ children }) {
   }
 
   // If authenticated but not admin, redirect is handled by useEffect above
-  if (status === 'authenticated' && session?.user?.role !== 'admin') {
+  if (status === 'authenticated' && !isAdmin) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
@@ -104,10 +107,23 @@ export default function AdminLayout({ children }) {
                     color: active ? '#f59e0b' : undefined,
                     background: active ? 'rgba(245,158,11,0.1)' : undefined,
                     borderColor: active ? 'rgba(245,158,11,0.2)' : undefined,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  <span style={{ display: 'flex', alignItems: 'center' }}>{item.icon}</span>
-                  {item.label}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                    <span style={{ display: 'flex', alignItems: 'center' }}>{item.icon}</span>
+                    {item.label}
+                  </span>
+                  {item.highlight && (
+                    <span style={{
+                      fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.05em',
+                      background: 'rgba(16,185,129,0.2)', color: '#10b981',
+                      border: '1px solid rgba(16,185,129,0.35)',
+                      borderRadius: '999px', padding: '0.1rem 0.45rem',
+                    }}>LIVE</span>
+                  )}
                 </a>
               );
             })}
