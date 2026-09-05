@@ -35,9 +35,14 @@ export async function GET(request, { params }) {
     return NextResponse.json(
       {
         exists: true,
+        roomId: room.roomId,
         status: room.status,
         senderClientId: room.senderClientId,
         receiverClientId: room.receiverClientId,
+        files: room.files || [],
+        totalSize: room.totalSize || 0,
+        fileCount: room.fileCount || (room.files ? room.files.length : 0),
+        receiverProgress: room.receiverProgress ? Object.fromEntries(room.receiverProgress) : {},
       },
       { headers: NO_CACHE_HEADERS }
     );

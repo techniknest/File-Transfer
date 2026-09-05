@@ -31,8 +31,8 @@ async function connectDB() {
       serverSelectionTimeoutMS: 10000, // 10s for Vercel cold starts
       connectTimeoutMS: 10000,
       socketTimeoutMS: 45000,
-      maxPoolSize: 1,   // CRITICAL: 1 connection per Lambda = low RAM usage
-      minPoolSize: 0,
+      maxPoolSize: 10,  // Allows concurrent parallel queries (signals, transfers, logs) without bottlenecking
+      minPoolSize: 2,
       family: 4,        // Force IPv4 — prevents SRV DNS timeouts on AWS Lambda
       // NOTE: bufferCommands defaults to true — keep it that way so operations
       // queue briefly during connect rather than failing immediately on cold start

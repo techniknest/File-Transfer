@@ -17,6 +17,9 @@ export async function POST(request) {
     const body = await request.json().catch(() => ({}));
     const rawRoomId = body?.roomId;
     const clientId = body?.clientId;
+    const files = Array.isArray(body?.files) ? body.files : [];
+    const totalSize = Number(body?.totalSize) || 0;
+    const fileCount = Number(body?.fileCount) || files.length;
     const roomId = rawRoomId ? rawRoomId.trim().toUpperCase() : '';
 
     if (!roomId || !clientId) {
@@ -26,21 +29,33 @@ export async function POST(request) {
       );
     }
 
-    console.log('[ROOM] Creating room:', roomId, 'for clientId:', clientId);
+    console.log('[ROOM] Creating / resuming room:', roomId, 'for clientId:', clientId);
 
-    // Clean up any existing room with same ID
-    await Room.deleteOne({ roomId });
+    // If the room already exists (e.g. sender reconnecting/resuming same session),
+    // preserve existing receiverProgress and receiverClientId instead of deleting the document.
+    let room = await Room.findOne({ roomId });
+    if (room) {
+      console.log('[ROOM] Re-using existing room for resume:', roomId);
+      room.senderClientId = clientId;
+      room.status = 'waiting';
+      if (files.length > 0) room.files = files;
+      if (totalSize > 0) room.totalSize = totalSize;
+      if (fileCount > 0) room.fileCount = fileCount;
+      await room.save();
+    } else {
+      room = await Room.create({
+        roomId,
+        senderClientId: clientId,
+        status: 'waiting',
+        files,
+        totalSize,
+        fileCount,
+      });
+      console.log('[ROOM] Created new room in MongoDB:', room.roomId, 'status:', room.status);
+    }
 
-    // Delete any stale signals for this roomId from previous sessions
+    // Delete any stale signals for this roomId from previous sessions so WebRTC handshake starts fresh
     await Signal.deleteMany({ roomId });
-
-    const room = await Room.create({
-      roomId,
-      senderClientId: clientId,
-      status: 'waiting',
-    });
-
-    console.log('[ROOM] Room created in MongoDB:', room.roomId, 'status:', room.status);
 
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     await SystemLog.create({

@@ -17,8 +17,35 @@ const RoomSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['waiting', 'connected', 'closed'],
+    enum: ['waiting', 'connected', 'active_transfer', 'closed'],
     default: 'waiting',
+  },
+  // Timestamp of the last receiver ping — used to detect stale / timed-out connections
+  receiverLastActivity: {
+    type: Date,
+    default: null,
+  },
+  // Server-side resume offsets: { "0": 1024, "1": 512 } — fileIndex → chunks received
+  // Updated periodically by receiver so a page refresh can restore progress even if
+  // IndexedDB is cleared (e.g. private browsing, storage pressure, different device)
+  receiverProgress: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
+  // Attached files metadata permanently linked to this fixed room number
+  files: [{
+    fileName: { type: String, required: true },
+    fileSize: { type: Number, required: true },
+    fileType: { type: String, default: 'application/octet-stream' },
+  }],
+  totalSize: {
+    type: Number,
+    default: 0,
+  },
+  fileCount: {
+    type: Number,
+    default: 0,
   },
   createdAt: {
     type: Date,

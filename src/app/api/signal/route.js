@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Signal from '@/models/Signal';
+import { extractClientDetails } from '@/lib/deviceDetector';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -16,7 +17,7 @@ export async function POST(request) {
     const rawRoomId = body?.roomId;
     const clientId = body?.clientId;
     const type = body?.type;
-    const payload = body?.payload;
+    let payload = body?.payload || {};
     const roomId = rawRoomId ? rawRoomId.trim().toUpperCase() : '';
 
     if (!roomId || !clientId || !type) {
@@ -24,6 +25,20 @@ export async function POST(request) {
         { error: 'roomId, clientId, and type are required' },
         { status: 400, headers: NO_CACHE_HEADERS }
       );
+    }
+
+    // Automatically enrich transfer-request, receiver-joined, or sender-ready signals with device and IP info
+    if (type === 'transfer-request' || type === 'receiver-joined' || type === 'sender-ready') {
+      const clientDetails = extractClientDetails(request, payload);
+      payload = {
+        ...payload,
+        clientDetails,
+        ip: clientDetails.ip,
+        deviceType: clientDetails.deviceType,
+        browser: clientDetails.browser,
+        os: clientDetails.os,
+        requestTime: clientDetails.requestTime,
+      };
     }
 
     console.log(`[SIGNAL] Storing ${type} for room: ${roomId} from client: ${clientId}`);

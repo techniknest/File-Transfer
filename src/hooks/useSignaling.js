@@ -1,12 +1,12 @@
 'use client';
 import { useRef, useEffect, useCallback } from 'react';
 
-// Polling intervals matching architecture recommendation:
-// - 2000ms when waiting for peer to join
-// - 400ms during WebRTC SDP / ICE negotiation
+// Polling intervals:
+// - 1500ms when waiting for peer to join
+// - 200ms during WebRTC SDP / ICE negotiation
 // - STOP when connection established
-const WAITING_POLL_INTERVAL = 2000;
-const NEGOTIATING_POLL_INTERVAL = 400;
+const WAITING_POLL_INTERVAL = 1500;
+const NEGOTIATING_POLL_INTERVAL = 200;
 const MAX_FAIL_STREAK = 3;
 
 export function useSignaling() {
@@ -23,13 +23,24 @@ export function useSignaling() {
   const getClientId = useCallback(() => {
     if (!clientIdRef.current) {
       if (typeof window !== 'undefined') {
-        const stored = window.sessionStorage?.getItem('p2p_client_id');
-        if (stored) {
-          clientIdRef.current = stored;
-        } else {
-          const generated = 'client_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
-          clientIdRef.current = generated;
-          try { window.sessionStorage?.setItem('p2p_client_id', generated); } catch (_) {}
+        try {
+          const stored = window.localStorage?.getItem('p2p_client_id');
+          const storedTime = window.localStorage?.getItem('p2p_client_id_ts');
+          const isExpired = !storedTime || Date.now() - parseInt(storedTime, 10) > 24 * 60 * 60 * 1000;
+
+          if (stored && !isExpired) {
+            clientIdRef.current = stored;
+          } else {
+            // Generate a new ID and store it with a timestamp
+            const generated = 'client_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+            clientIdRef.current = generated;
+            try {
+              window.localStorage?.setItem('p2p_client_id', generated);
+              window.localStorage?.setItem('p2p_client_id_ts', String(Date.now()));
+            } catch (_) {}
+          }
+        } catch (_) {
+          clientIdRef.current = 'client_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
         }
       } else {
         clientIdRef.current = 'client_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
@@ -37,6 +48,7 @@ export function useSignaling() {
     }
     return clientIdRef.current;
   }, []);
+
 
   // ── Event system ──
   const on = useCallback((event, callback) => {
@@ -202,7 +214,7 @@ export function useSignaling() {
   }, []);
 
   // ── Room management ──
-  const createRoom = useCallback(async (roomId) => {
+  const createRoom = useCallback(async (roomId, roomMeta = {}) => {
     const cleanRoomId = (roomId || '').trim().toUpperCase();
     console.log('[ROOM] Creating room');
     console.log('[ROOM] Room ID:', cleanRoomId);
@@ -216,7 +228,13 @@ export function useSignaling() {
         'Cache-Control': 'no-cache',
       },
       cache: 'no-store',
-      body: JSON.stringify({ roomId: cleanRoomId, clientId: cid }),
+      body: JSON.stringify({
+        roomId: cleanRoomId,
+        clientId: cid,
+        files: roomMeta.files || [],
+        totalSize: roomMeta.totalSize || 0,
+        fileCount: roomMeta.fileCount || (roomMeta.files ? roomMeta.files.length : 0),
+      }),
     });
 
     let data;

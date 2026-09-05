@@ -22,6 +22,7 @@ const SignalSchema = new mongoose.Schema({
       'transfer-allow',
       'transfer-decline',
       'transfer-resume',
+      'sender-ready',
     ],
   },
   payload: {

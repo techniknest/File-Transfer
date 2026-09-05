@@ -1,14 +1,32 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { useSignaling } from '@/hooks/useSignaling';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import {
   FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, File,
-  Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info, Shield
+  Zap, Download, Radio, AlertTriangle, CheckCircle, XCircle, Info, Shield, RefreshCw, Folder
 } from 'lucide-react';
 import { logEvent } from '@/lib/logger';
+import {
+  storeChunk,
+  assembleFileBlob,
+  getContiguousChunkCount,
+  getTransferSession,
+  saveTransferSession,
+  clearRoomData,
+  flushPendingChunks,
+} from '@/lib/chunkStorage';
+import {
+  isDiskStreamingSupported,
+  pickDownloadDirectory,
+  checkExistingFileOnDisk,
+  openDiskWriter,
+  writeChunkToDisk,
+  closeDiskWriter,
+} from '@/lib/diskStreamer';
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
@@ -74,13 +92,16 @@ function Spinner({ color = '#10b981', size = 48, thickness = 3 }) {
 }
 
 export default function ReceivePage() {
-  const [status, setStatus] = useState('idle'); // idle | connecting | waiting | receiving | done | invalid | full | error
+  const { data: session } = useSession();
+  const [status, setStatus] = useState('idle'); // idle | connecting | waiting-permission | receiving | disconnected-waiting | done | invalid | full | error
   const [roomId, setRoomId] = useState('');
   const [manualLink, setManualLink] = useState('');
   const [prefilledRoomId, setPrefilledRoomId] = useState('');
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
+  // Bytes already received before this session (for resume-from display)
+  const [resumeFromBytes, setResumeFromBytes] = useState(0);
 
   const signaling = useSignaling();
   const { createAnswerWithIce, addCandidate, close: closeWebRTC } = useWebRTC();
@@ -96,20 +117,63 @@ export default function ReceivePage() {
     receivedBytes: 0,
   });
 
-  const chunksRef = useRef([]);
   const metaRef = useRef(null);
   const roomIdRef = useRef('');
   const trackRef = useRef({ totalBytes: 0, receivedBytes: 0, lastTime: Date.now(), lastBytes: 0 });
   const filesRef = useRef([]);
   const initializedRef = useRef(false);
+  // Holds the setInterval ID for the periodic server-side progress heartbeat
+  const heartbeatRef = useRef(null);
 
-  // Chunk storage map: fileIndex -> array of ArrayBuffer chunks
-  const fileChunksRef = useRef({});
+  // Direct-to-Disk streaming state (File System Access API)
+  const [folderName, setFolderName] = useState('');
+  const dirHandleRef = useRef(null);
+  const currentDiskWriterRef = useRef(null);
+  const diskOffsetsRef = useRef({});
 
   const addToast = useCallback((message, type = 'info', duration = 3500) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), duration);
+  }, []);
+
+  const handleSelectFolder = useCallback(async () => {
+    try {
+      const dir = await pickDownloadDirectory();
+      dirHandleRef.current = dir;
+      setFolderName(dir.name);
+      addToast(`Download folder: ${dir.name}. Files will stream directly to disk with zero RAM load!`, 'success', 4000);
+      return dir;
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('Folder selection error:', err);
+      }
+      return null;
+    }
+  }, [addToast]);
+
+  // Periodically PATCH our chunk progress to the server so the room's
+  // receiverLastActivity stays fresh and resume offsets are server-persisted.
+  const startHeartbeat = useCallback((targetRoomId, clientId, getResumeOffsets) => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    heartbeatRef.current = setInterval(async () => {
+      try {
+        const progress = await getResumeOffsets();
+        if (Object.keys(progress).length === 0) return;
+        await fetch(`/api/rooms/${encodeURIComponent(targetRoomId)}/progress`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId, progress }),
+        });
+      } catch (_) {}
+    }, 8000); // ping every 8s
+  }, []);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
   }, []);
 
   const handleSetupDataChannel = useCallback((dc) => {
@@ -119,7 +183,7 @@ export default function ReceivePage() {
     setStatus('receiving');
     addToast('Transfer connection active!', 'success');
 
-    dc.onmessage = (ev) => {
+    dc.onmessage = async (ev) => {
       if (typeof ev.data === 'string') {
         let msg;
         try {
@@ -135,15 +199,28 @@ export default function ReceivePage() {
             totalFiles: msg.totalFiles || 0,
             totalBytes: msg.totalBytes || 0,
           }));
+          saveTransferSession(roomIdRef.current, { totalFiles: msg.totalFiles, totalBytes: msg.totalBytes });
         }
 
         if (msg.type === 'meta') {
           metaRef.current = msg;
-          const fIdx = msg.fileIndex ?? 0;
-          if (!fileChunksRef.current[fIdx]) {
-            fileChunksRef.current[fIdx] = [];
-          }
           setStats((prev) => ({ ...prev, currentFile: msg.fileName }));
+
+          // Open disk writable directly if folder selected (zero RAM usage!)
+          if (dirHandleRef.current) {
+            try {
+              const startByteOffset = (diskOffsetsRef.current[msg.fileIndex] || 0) * 64 * 1024;
+              currentDiskWriterRef.current = await openDiskWriter(
+                dirHandleRef.current,
+                msg.fileName,
+                startByteOffset
+              );
+              console.log(`[DiskStreamer] Streaming directly to disk: ${msg.fileName} (offset: ${startByteOffset} bytes)`);
+            } catch (err) {
+              console.warn('[DiskStreamer] Could not open disk writer, falling back to IndexedDB:', err);
+              currentDiskWriterRef.current = null;
+            }
+          }
 
           logEvent({
             eventType: 'receiver_file_start',
@@ -160,63 +237,118 @@ export default function ReceivePage() {
           if (!meta) return;
 
           const fIdx = msg.fileIndex ?? 0;
-          const rawChunks = fileChunksRef.current[fIdx] || [];
-          // Filter out undefined holes if any
-          const validChunks = [];
-          for (let i = 0; i < (msg.totalChunks || rawChunks.length); i++) {
-            if (rawChunks[i]) validChunks.push(rawChunks[i]);
-          }
 
-          const blob = new Blob(validChunks, { type: meta.fileType || 'application/octet-stream' });
-          const blobUrl = URL.createObjectURL(blob);
+          if (currentDiskWriterRef.current) {
+            // Finalize direct-to-disk write
+            await closeDiskWriter(currentDiskWriterRef.current);
+            currentDiskWriterRef.current = null;
 
-          console.log(`[DATA] Assembled file ${meta.fileName}: ${blob.size} bytes (Expected: ${meta.fileSize} bytes)`);
+            const fileEntry = {
+              name: meta.fileName,
+              url: null,
+              size: meta.fileSize,
+              expectedSize: meta.fileSize,
+              isComplete: true,
+              isDirectToDisk: true,
+            };
 
-          const fileEntry = {
-            name: meta.fileName,
-            url: blobUrl,
-            size: blob.size,
-            expectedSize: meta.fileSize,
-            isComplete: blob.size >= meta.fileSize,
-          };
+            filesRef.current = [...filesRef.current, fileEntry];
+            setReceivedFiles([...filesRef.current]);
+            setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+            addToast(`Saved to folder: ${meta.fileName}`, 'success', 5000);
 
-          filesRef.current = [...filesRef.current, fileEntry];
-          setReceivedFiles([...filesRef.current]);
-          setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
-          addToast(`Received: ${meta.fileName} (${formatBytes(blob.size)})`, 'success', 5000);
-
-          logEvent({
-            eventType: 'receiver_file_completed',
-            level: 'success',
-            category: 'transfer',
-            roomId: roomIdRef.current,
-            message: `File download complete: ${meta.fileName} (${formatBytes(blob.size)})`,
-            metadata: { fileName: meta.fileName, size: blob.size, totalChunks: validChunks.length },
-          });
-
-          // Trigger automatic browser download
-          setTimeout(() => {
+            logEvent({
+              eventType: 'receiver_file_completed',
+              level: 'success',
+              category: 'transfer',
+              roomId: roomIdRef.current,
+              message: `File saved directly to disk: ${meta.fileName} (${formatBytes(meta.fileSize)})`,
+              metadata: { fileName: meta.fileName, size: meta.fileSize },
+            });
+          } else {
             try {
-              const a = document.createElement('a');
-              a.style.display = 'none';
-              a.href = blobUrl;
-              a.download = meta.fileName;
-              document.body.appendChild(a);
-              a.click();
+              await flushPendingChunks();
+              // Assemble blob safely from IndexedDB without memory explosion
+              const blob = await assembleFileBlob(roomIdRef.current, fIdx, msg.totalChunks, meta.fileType);
+              const blobUrl = URL.createObjectURL(blob);
+
+              console.log(`[DATA] Assembled file ${meta.fileName}: ${blob.size} bytes (Expected: ${meta.fileSize} bytes)`);
+
+              const fileEntry = {
+                name: meta.fileName,
+                url: blobUrl,
+                size: blob.size,
+                expectedSize: meta.fileSize,
+                isComplete: blob.size >= meta.fileSize,
+              };
+
+              filesRef.current = [...filesRef.current, fileEntry];
+              setReceivedFiles([...filesRef.current]);
+              setStats((prev) => ({ ...prev, receivedCount: prev.receivedCount + 1 }));
+              addToast(`Received: ${meta.fileName} (${formatBytes(blob.size)})`, 'success', 5000);
+
+              logEvent({
+                eventType: 'receiver_file_completed',
+                level: 'success',
+                category: 'transfer',
+                roomId: roomIdRef.current,
+                message: `File download complete: ${meta.fileName} (${formatBytes(blob.size)})`,
+                metadata: { fileName: meta.fileName, size: blob.size },
+              });
+
+              // Trigger automatic browser download
               setTimeout(() => {
-                try { document.body.removeChild(a); } catch (_) {}
-              }, 2000);
+                try {
+                  const a = document.createElement('a');
+                  a.style.display = 'none';
+                  a.href = blobUrl;
+                  a.download = meta.fileName;
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(() => {
+                    try {
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(blobUrl);
+                    } catch (_) {}
+                  }, 3000);
+                } catch (err) {
+                  console.warn('[Download] Auto download trigger blocked:', err);
+                }
+              }, 80);
             } catch (err) {
-              console.warn('[Download] Auto download trigger blocked:', err);
+              console.error('[DATA] Error assembling file from storage:', err);
+              addToast(`Error saving file ${meta.fileName}`, 'error');
             }
-          }, 80);
+          }
         }
 
         if (msg.type === 'session-end') {
           setStatus('done');
           setStats((prev) => ({ ...prev, progress: 100 }));
           addToast('All files successfully transferred!', 'success', 6000);
+          stopHeartbeat();
           signaling.stopPolling();
+
+          // Save receiver record to MongoDB transfer history
+          try {
+            await fetch('/api/transfers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                roomId: roomIdRef.current,
+                receiverEmail: session?.user?.email || 'anonymous',
+                files: filesRef.current.map((f) => ({
+                  fileName: f.name,
+                  fileSize: f.size,
+                })),
+                totalSize: trackRef.current.totalBytes,
+                status: 'completed',
+              }),
+            });
+          } catch (_) {}
+
+          // Clean up chunks from IndexedDB
+          clearRoomData(roomIdRef.current);
 
           logEvent({
             eventType: 'receiver_session_completed',
@@ -235,16 +367,21 @@ export default function ReceivePage() {
           const chunkIndex = view.getUint32(4, false);
           const chunkPayload = dataBuffer.slice(8);
 
-          if (!fileChunksRef.current[fileIndex]) {
-            fileChunksRef.current[fileIndex] = [];
+          if (currentDiskWriterRef.current) {
+            // Stream directly to hard drive with 0 RAM usage!
+            writeChunkToDisk(currentDiskWriterRef.current, chunkPayload).catch(() => {});
+          } else {
+            // Stream into IndexedDB
+            storeChunk(roomIdRef.current, fileIndex, chunkIndex, chunkPayload);
           }
-          fileChunksRef.current[fileIndex][chunkIndex] = chunkPayload;
           trackRef.current.receivedBytes += chunkPayload.byteLength;
         } else {
-          // Fallback un-framed raw chunk
           const fIdx = metaRef.current?.fileIndex ?? 0;
-          if (!fileChunksRef.current[fIdx]) fileChunksRef.current[fIdx] = [];
-          fileChunksRef.current[fIdx].push(dataBuffer);
+          if (currentDiskWriterRef.current) {
+            writeChunkToDisk(currentDiskWriterRef.current, dataBuffer).catch(() => {});
+          } else {
+            storeChunk(roomIdRef.current, fIdx, 0, dataBuffer);
+          }
           trackRef.current.receivedBytes += dataBuffer.byteLength;
         }
 
@@ -287,8 +424,19 @@ export default function ReceivePage() {
 
     dc.onclose = () => {
       console.log('[DATA] Channel closed on Receiver');
+      stopHeartbeat();
+      // If closed before session-end, don't crash or discard chunks — wait for sender reconnect
+      setStatus((prev) => {
+        if (prev === 'receiving') {
+          addToast('Connection interrupted. Waiting for sender to resume...', 'warning', 6000);
+          // Keep signaling polling alive to catch sender-ready
+          signaling.startPolling(roomIdRef.current, true);
+          return 'disconnected-waiting';
+        }
+        return prev;
+      });
     };
-  }, [addToast, signaling]);
+  }, [addToast, signaling, session, startHeartbeat, stopHeartbeat]);
 
   const connect = useCallback(async (targetRoomId) => {
     if (!targetRoomId) return;
@@ -297,9 +445,55 @@ export default function ReceivePage() {
     setRoomId(targetRoomId);
     setStatus('waiting-permission');
 
-    trackRef.current = { totalBytes: 0, receivedBytes: 0, lastTime: Date.now(), lastBytes: 0 };
+    // ── Check if files already exist on disk (Direct-to-Disk) or in IndexedDB ──
+    let cachedReceivedBytes = 0;
+    const indexedDbOffsets = {};
+    diskOffsetsRef.current = {};
+
+    if (dirHandleRef.current) {
+      try {
+        const roomRes = await fetch(`/api/rooms/${encodeURIComponent(targetRoomId)}`);
+        if (roomRes.ok) {
+          const roomData = await roomRes.json();
+          const rFiles = roomData?.files || [];
+          for (let f = 0; f < rFiles.length; f++) {
+            const check = await checkExistingFileOnDisk(dirHandleRef.current, rFiles[f].fileName);
+            if (check.completedChunks > 0) {
+              diskOffsetsRef.current[f] = check.completedChunks;
+              cachedReceivedBytes += check.resumeBytes;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (cachedReceivedBytes === 0) {
+      try {
+        for (let fIdx = 0; fIdx < 10; fIdx++) {
+          const count = await getContiguousChunkCount(targetRoomId, fIdx);
+          if (count > 0) {
+            indexedDbOffsets[fIdx] = count;
+            cachedReceivedBytes += count * 64 * 1024;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (cachedReceivedBytes > 0) {
+      setResumeFromBytes(cachedReceivedBytes);
+    }
+
+    trackRef.current = {
+      totalBytes: 0,
+      receivedBytes: cachedReceivedBytes,
+      lastTime: Date.now(),
+      lastBytes: cachedReceivedBytes,
+    };
     filesRef.current = [];
     metaRef.current = null;
+
+    // Start polling immediately so we pick up sender-ready if sender is already waiting
+    signaling.startPolling(targetRoomId, true);
 
     logEvent({
       eventType: 'receiver_connect_attempt',
@@ -313,10 +507,46 @@ export default function ReceivePage() {
     signaling.off('transfer-allow');
     signaling.off('transfer-decline');
     signaling.off('ice-candidate');
+    signaling.off('sender-ready');
+
+    let answerCreated = false;
+
+    // Handle sender re-initiating or getting ready (e.g. sender refreshed and reconnected)
+    signaling.on('sender-ready', async (readyData) => {
+      console.log('[Receiver] Sender ready / reconnected signal received:', readyData);
+      answerCreated = false;
+      setStatus('waiting-permission');
+      addToast('Sender reconnected — re-requesting transfer...', 'info', 3000);
+
+      // Re-read latest offsets from disk (if direct-to-disk) or from IndexedDB
+      const resumeOffsets = dirHandleRef.current && Object.keys(diskOffsetsRef.current).length > 0
+        ? { ...diskOffsetsRef.current }
+        : {};
+      if (Object.keys(resumeOffsets).length === 0) {
+        try {
+          for (let fIdx = 0; fIdx < 10; fIdx++) {
+            const count = await getContiguousChunkCount(targetRoomId, fIdx);
+            if (count > 0) {
+              resumeOffsets[fIdx] = count;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Always send both signals — sender may already be past the transfer-request handler
+      await signaling.sendSignal('transfer-request', {
+        device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser',
+        receiverEmail: session?.user?.email || 'anonymous',
+        resumeOffsets,
+        timestamp: Date.now(),
+      });
+      await signaling.sendSignal('transfer-resume', { resumeOffsets });
+    });
 
     // Handle sender permission approval
     signaling.on('transfer-allow', (allowData) => {
       console.log('[Receiver] Sender allowed transfer:', allowData);
+      answerCreated = false;
       setStatus('connecting');
       addToast('Sender approved request! Establishing connection...', 'success');
     });
@@ -334,7 +564,6 @@ export default function ReceivePage() {
       await addCandidate(data.candidate);
     });
 
-    let answerCreated = false;
     signaling.on('offer', async (data) => {
       const offer = data?.offer;
       if (!offer) return;
@@ -368,6 +597,15 @@ export default function ReceivePage() {
             });
             if (state === 'connected') {
               console.log('[Receiver] Direct P2P tunnel established!');
+            } else if (state === 'disconnected' || state === 'failed') {
+              setStatus((prev) => {
+                if (prev === 'receiving') {
+                  addToast('Sender connection interrupted. Waiting for sender to resume...', 'warning', 6000);
+                  signaling.startPolling(targetRoomId, true);
+                  return 'disconnected-waiting';
+                }
+                return prev;
+              });
             }
           },
           // Trickle ICE: forward receiver's local ICE candidates to sender
@@ -407,35 +645,71 @@ export default function ReceivePage() {
     });
 
     try {
-      await signaling.joinRoom(targetRoomId);
+      const joinResult = await signaling.joinRoom(targetRoomId);
 
-      // Calculate any resume offsets from already present chunks in memory
-      const resumeOffsets = {};
-      Object.keys(fileChunksRef.current).forEach((k) => {
-        if (fileChunksRef.current[k]?.length > 0) {
-          resumeOffsets[k] = fileChunksRef.current[k].length;
+      // ── Resume offsets: Use actual contiguous chunks stored on disk or in IndexedDB ──
+      const resumeOffsets = dirHandleRef.current && Object.keys(diskOffsetsRef.current).length > 0
+        ? { ...diskOffsetsRef.current }
+        : { ...indexedDbOffsets };
+
+      // If we picked up server-only progress (no IndexedDB), update bytes estimate
+      if (cachedReceivedBytes === 0 && Object.keys(resumeOffsets).length > 0) {
+        let serverBytes = 0;
+        for (const count of Object.values(resumeOffsets)) {
+          serverBytes += count * 64 * 1024;
         }
-      });
+        if (serverBytes > 0) {
+          setResumeFromBytes(serverBytes);
+          trackRef.current.receivedBytes = serverBytes;
+          trackRef.current.lastBytes = serverBytes;
+        }
+      }
 
-      // Send explicit transfer request with optional resume data
+      const hasResume = Object.keys(resumeOffsets).length > 0;
+
+      // ── Start server heartbeat so room stays "live" and progress is persisted ──
+      const clientId = signaling.getClientId();
+      const getOffsetsForHeartbeat = async () => {
+        const offsets = {};
+        try {
+          for (let fIdx = 0; fIdx < 10; fIdx++) {
+            const count = await getContiguousChunkCount(targetRoomId, fIdx);
+            if (count > 0) offsets[fIdx] = count;
+          }
+        } catch (_) {}
+        return offsets;
+      };
+      startHeartbeat(targetRoomId, clientId, getOffsetsForHeartbeat);
+
+      // ── Send transfer request — always include resumeOffsets ──
       await signaling.sendSignal('transfer-request', {
         device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser',
+        receiverEmail: session?.user?.email || 'anonymous',
         resumeOffsets,
         timestamp: Date.now(),
       });
 
-      if (Object.keys(resumeOffsets).length > 0) {
-        await signaling.sendSignal('transfer-resume', { resumeOffsets });
-      }
+      // Always also send an explicit transfer-resume signal so sender picks up offsets
+      // even if it already saw the transfer-request
+      await signaling.sendSignal('transfer-resume', { resumeOffsets });
 
-      addToast('Transfer request sent. Waiting for sender approval...', 'info');
+      if (hasResume) {
+        const approxPct = cachedReceivedBytes > 0
+          ? `~${Math.round((cachedReceivedBytes / (cachedReceivedBytes + 1)) * 100)}%`
+          : 'partial';
+        addToast(`Resuming interrupted transfer (${Object.keys(resumeOffsets).length} file(s) partially received)`, 'info', 5000);
+      } else {
+        addToast('Transfer request sent. Waiting for sender approval...', 'info');
+      }
 
       logEvent({
         eventType: 'receiver_joined_success',
         level: 'success',
         category: 'room',
         roomId: targetRoomId,
-        message: `Receiver successfully joined room ${targetRoomId} and requested transfer permission.`,
+        message: `Receiver successfully joined room ${targetRoomId}${
+          hasResume ? ` with resume offsets: ${JSON.stringify(resumeOffsets)}` : ''
+        }`,
       });
     } catch (err) {
       const msg = err.message || 'Could not connect to room. Please try again.';
@@ -459,7 +733,7 @@ export default function ReceivePage() {
         addToast(msg, 'error', 6000);
       }
     }
-  }, [signaling, createAnswerWithIce, addCandidate, handleSetupDataChannel, addToast]);
+  }, [signaling, createAnswerWithIce, addCandidate, handleSetupDataChannel, addToast, session, startHeartbeat, stopHeartbeat]);
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -475,10 +749,34 @@ export default function ReceivePage() {
     }
 
     return () => {
+      stopHeartbeat();
       signaling.stopPolling();
       closeWebRTC();
     };
-  }, [connect, signaling, closeWebRTC]);
+  }, [connect, signaling, closeWebRTC, stopHeartbeat]);
+
+  // Periodic resume ping when disconnected and waiting for sender
+  useEffect(() => {
+    if (status !== 'disconnected-waiting') return;
+    const interval = setInterval(async () => {
+      if (!roomIdRef.current) return;
+      try {
+        const resumeOffsets = {};
+        for (let fIdx = 0; fIdx < 10; fIdx++) {
+          const count = await getContiguousChunkCount(roomIdRef.current, fIdx);
+          if (count > 0) resumeOffsets[fIdx] = count;
+        }
+        await signaling.sendSignal('transfer-request', {
+          device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser',
+          receiverEmail: session?.user?.email || 'anonymous',
+          resumeOffsets,
+          timestamp: Date.now(),
+        });
+      } catch (_) {}
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [status, signaling, session]);
 
   useEffect(() => {
     if (status !== 'receiving') return;
@@ -514,18 +812,28 @@ export default function ReceivePage() {
     return val.replace(/[^a-zA-Z0-9_-]/g, '').trim().toUpperCase();
   };
 
-  const handleManualSubmit = (e) => {
+  const handleManualSubmit = async (e) => {
     e.preventDefault();
     const cleanRoom = extractRoomId(manualLink);
     if (!cleanRoom) {
       addToast('Please enter a valid transfer link or room code', 'warning');
       return;
     }
+    if (isDiskStreamingSupported() && !dirHandleRef.current) {
+      await handleSelectFolder();
+    }
     setErrorMessage('');
     signaling.stopPolling();
     closeWebRTC();
     initializedRef.current = true;
     connect(cleanRoom);
+  };
+
+  const handleStartReceivingWithFolder = async (targetId) => {
+    if (isDiskStreamingSupported() && !dirHandleRef.current) {
+      await handleSelectFolder();
+    }
+    connect(targetId);
   };
 
   return (
@@ -584,8 +892,48 @@ export default function ReceivePage() {
                       </span>
                     </div>
 
+                    {isDiskStreamingSupported() && (
+                      <div
+                        onClick={handleSelectFolder}
+                        style={{
+                          background: folderName ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)',
+                          border: `1px dashed ${folderName ? '#10b981' : 'rgba(255,255,255,0.2)'}`,
+                          borderRadius: '0.875rem',
+                          padding: '0.75rem 1rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.75rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+                          <Folder size={20} color={folderName ? '#10b981' : '#60a5fa'} />
+                          <div style={{ textAlign: 'left', minWidth: 0 }}>
+                            <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {folderName ? `Folder: ${folderName}` : 'Save directly to disk folder'}
+                            </div>
+                            <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.72rem' }}>
+                              {folderName ? 'Direct disk streaming active (Zero browser RAM)' : 'Click to select folder & stream with 0 RAM'}
+                            </div>
+                          </div>
+                        </div>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          color: folderName ? '#10b981' : '#60a5fa',
+                          background: folderName ? 'rgba(16,185,129,0.15)' : 'rgba(96,165,250,0.1)',
+                          padding: '0.25rem 0.6rem',
+                          borderRadius: '0.5rem',
+                          flexShrink: 0,
+                        }}>
+                          {folderName ? 'Change' : 'Select'}
+                        </span>
+                      </div>
+                    )}
+
                     <button
-                      onClick={() => connect(prefilledRoomId)}
+                      onClick={() => handleStartReceivingWithFolder(prefilledRoomId)}
                       style={{
                         width: '100%', padding: '1.1rem',
                         background: 'linear-gradient(135deg, #10b981, #059669)',
@@ -638,6 +986,47 @@ export default function ReceivePage() {
                         onFocus={e => e.target.style.borderColor = 'rgba(16,185,129,0.6)'}
                         onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.15)'}
                       />
+
+                      {isDiskStreamingSupported() && (
+                        <div
+                          onClick={handleSelectFolder}
+                          style={{
+                            background: folderName ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)',
+                            border: `1px dashed ${folderName ? '#10b981' : 'rgba(255,255,255,0.2)'}`,
+                            borderRadius: '0.875rem',
+                            padding: '0.75rem 1rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.75rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+                            <Folder size={20} color={folderName ? '#10b981' : '#60a5fa'} />
+                            <div style={{ textAlign: 'left', minWidth: 0 }}>
+                              <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {folderName ? `Folder: ${folderName}` : 'Save directly to disk folder'}
+                              </div>
+                              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.72rem' }}>
+                                {folderName ? 'Direct disk streaming active (Zero browser RAM)' : 'Click to select folder & stream with 0 RAM'}
+                              </div>
+                            </div>
+                          </div>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: folderName ? '#10b981' : '#60a5fa',
+                            background: folderName ? 'rgba(16,185,129,0.15)' : 'rgba(96,165,250,0.1)',
+                            padding: '0.25rem 0.6rem',
+                            borderRadius: '0.5rem',
+                            flexShrink: 0,
+                          }}>
+                            {folderName ? 'Change' : 'Select'}
+                          </span>
+                        </div>
+                      )}
+
                       <button type="submit" style={{
                         width: '100%', padding: '0.9rem',
                         background: 'linear-gradient(135deg, #10b981, #059669)',
@@ -778,6 +1167,72 @@ export default function ReceivePage() {
               </div>
             )}
 
+            {/* ──────────── DISCONNECTED-WAITING state ──────────── */}
+            {status === 'disconnected-waiting' && (
+              <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'rgba(245,158,11,0.15)',
+                  border: '2px solid rgba(245,158,11,0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1.25rem',
+                  animation: 'pulse 2s infinite',
+                }}>
+                  <RefreshCw size={32} color="#f59e0b" />
+                </div>
+                <h2 style={{ color: '#f59e0b', fontWeight: 800, fontSize: '1.3rem', marginBottom: '0.4rem' }}>
+                  Sender Disconnected
+                </h2>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+                  The sender refreshed their page or connection dropped.
+                  <br />
+                  <span style={{ color: '#10b981', fontWeight: 600 }}>
+                    Downloaded data ({formatBytes(trackRef.current.receivedBytes)}) is safely cached.
+                  </span>
+                  <br />
+                  Waiting for sender to reconnect and resume transmission…
+                </p>
+
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  background: 'rgba(245,158,11,0.1)',
+                  border: '1px solid rgba(245,158,11,0.3)',
+                  borderRadius: '999px',
+                  padding: '0.4rem 1rem',
+                  color: '#f59e0b',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  marginBottom: '1.5rem',
+                }}>
+                  <Spinner color="#f59e0b" size={14} />
+                  <span>Listening for Sender Reconnection</span>
+                </div>
+
+                <br />
+                <button
+                  onClick={() => connect(roomIdRef.current)}
+                  style={{
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    border: 'none',
+                    borderRadius: '0.75rem',
+                    padding: '0.6rem 1.25rem',
+                    color: 'white',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <RefreshCw size={14} style={{ display: 'inline', marginRight: '0.3rem' }} /> Retry Connection Now
+                </button>
+              </div>
+            )}
+
             {/* ──────────── WAITING state ──────────── */}
             {status === 'waiting' && (
               <div style={{ textAlign: 'center', padding: '1rem 0' }}>
@@ -834,9 +1289,21 @@ export default function ReceivePage() {
             {/* ──────────── RECEIVING state ──────────── */}
             {status === 'receiving' && (
               <div>
-                <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.2rem', textAlign: 'center', marginBottom: '1.5rem' }}>
-                  Receiving Files…
-                </h2>
+                <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                  <h2 style={{ color: 'white', fontWeight: 800, fontSize: '1.2rem', margin: '0 0 0.4rem' }}>
+                    Receiving Files…
+                  </h2>
+                  {resumeFromBytes > 0 && (
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                      background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)',
+                      borderRadius: '999px', padding: '0.25rem 0.75rem',
+                      color: '#f59e0b', fontSize: '0.75rem', fontWeight: 600,
+                    }}>
+                      <RefreshCw size={12} /> Resumed from {formatBytes(resumeFromBytes)}
+                    </div>
+                  )}
+                </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem', marginBottom: '1.25rem' }}>
                   {[

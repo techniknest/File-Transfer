@@ -25,7 +25,7 @@ function formatSpeed(bps) {
   return `${(bps / 1048576).toFixed(2)} MB/s`;
 }
 
-export default function TransferModal({ isOpen, onClose, files, shareLink, roomId, status, progress, speed, eta, currentFile, onAddFiles }) {
+export default function TransferModal({ isOpen, onClose, files, shareLink, roomId, status, progress, speed, eta, currentFile, onAddFiles, isResumed = false }) {
   const [copied, setCopied] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
@@ -157,11 +157,25 @@ export default function TransferModal({ isOpen, onClose, files, shareLink, roomI
 
         {status === 'transferring' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.875rem' }}>
-                {currentFile ? `Sending: ${currentFile}` : 'Transferring...'}
-              </span>
-              <span style={{ color: 'white', fontWeight: 700 }}>{Math.round(progress)}%</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
+                <span style={{
+                  color: 'rgba(255,255,255,0.7)', fontSize: '0.875rem',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {currentFile ? `Sending: ${currentFile}` : 'Transferring...'}
+                </span>
+                {isResumed && (
+                  <span style={{
+                    fontSize: '0.68rem', fontWeight: 700, color: '#f59e0b',
+                    background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)',
+                    padding: '0.15rem 0.5rem', borderRadius: '999px', flexShrink: 0
+                  }}>
+                    Resumed
+                  </span>
+                )}
+              </div>
+              <span style={{ color: 'white', fontWeight: 700, flexShrink: 0 }}>{Math.round(progress)}%</span>
             </div>
             <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '999px', height: '8px', marginBottom: '0.75rem' }}>
               <div style={{ background: 'linear-gradient(90deg, #6366f1, #8b5cf6)', height: '100%', borderRadius: '999px', width: `${progress}%`, transition: 'width 0.3s' }} />

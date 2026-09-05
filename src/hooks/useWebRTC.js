@@ -6,21 +6,14 @@ const customStunServer = process.env.NEXT_PUBLIC_STUN_SERVER;
 export const DEFAULT_ICE_SERVERS = {
   iceServers: [
     ...(customStunServer ? [{ urls: customStunServer }] : []),
-    // Google Public STUN
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // Cloudflare Public STUN
     { urls: 'stun:stun.cloudflare.com:3478' },
-    // OpenRelay Public STUN & TURN
-    { urls: 'stun:openrelay.metered.ca:80' },
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ],
-  iceCandidatePoolSize: 10,
+  iceCandidatePoolSize: 6,
 };
 
 const CHUNK_SIZE = 64 * 1024; // 64KB chunks
@@ -36,7 +29,7 @@ async function fetchIceServers() {
       if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
         return {
           iceServers: data.iceServers,
-          iceCandidatePoolSize: 10,
+          iceCandidatePoolSize: 6,
         };
       }
     }
@@ -44,42 +37,6 @@ async function fetchIceServers() {
     console.warn('[WEBRTC] Could not fetch dynamic ICE servers from /api/turn:', err.message);
   }
   return DEFAULT_ICE_SERVERS;
-}
-
-/**
- * Wait for ICE gathering to complete or timeout after maxTimeoutMs.
- */
-export function waitForIceGathering(pc, maxTimeoutMs = 3000) {
-  return new Promise((resolve) => {
-    if (pc.iceGatheringState === 'complete') {
-      console.log('[ICE] Gathering complete');
-      resolve();
-      return;
-    }
-
-    let timeoutId;
-
-    const checkState = () => {
-      if (pc.iceGatheringState === 'complete') {
-        console.log('[ICE] Gathering complete');
-        cleanup();
-        resolve();
-      }
-    };
-
-    const cleanup = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      pc.removeEventListener('icegatheringstatechange', checkState);
-    };
-
-    pc.addEventListener('icegatheringstatechange', checkState);
-
-    timeoutId = setTimeout(() => {
-      console.log('[ICE] Gathering timeout window elapsed, continuing with gathered candidates');
-      cleanup();
-      resolve();
-    }, maxTimeoutMs);
-  });
 }
 
 export function useWebRTC() {
@@ -131,7 +88,7 @@ export function useWebRTC() {
   }, []);
 
   /**
-   * Initialize RTCPeerConnection with full diagnostic event listeners matching Section 9
+   * Initialize RTCPeerConnection with full diagnostic event listeners
    */
   const initPC = useCallback(async ({ onConnectionStateChange, onDataChannel, onIceCandidate } = {}) => {
     if (pcRef.current) {
@@ -208,7 +165,7 @@ export function useWebRTC() {
   };
 
   /**
-   * Sender: Creates atomic SDP Offer with gathered ICE candidates
+   * Sender: Creates SDP Offer instantly with Trickle ICE (no artificial delay)
    */
   const createOfferWithIce = useCallback(async ({ onConnectionStateChange, onDataChannel, onIceCandidate } = {}) => {
     const pc = await initPC({ onConnectionStateChange, onDataChannel, onIceCandidate });
@@ -218,9 +175,6 @@ export function useWebRTC() {
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    // Give STUN/TURN initial window to gather candidates
-    await waitForIceGathering(pc, 2500);
 
     return {
       offer: {
@@ -233,7 +187,7 @@ export function useWebRTC() {
   }, [initPC, setupDataChannelEvents]);
 
   /**
-   * Receiver: Sets remote SDP Offer and creates atomic SDP Answer
+   * Receiver: Sets remote SDP Offer and creates SDP Answer instantly with Trickle ICE
    */
   const createAnswerWithIce = useCallback(async (offer, { onConnectionStateChange, onDataChannel, onIceCandidate } = {}) => {
     const pc = await initPC({ onConnectionStateChange, onDataChannel, onIceCandidate });
@@ -247,9 +201,6 @@ export function useWebRTC() {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Give STUN/TURN initial window to gather candidates
-    await waitForIceGathering(pc, 2500);
-
     return {
       answer: {
         type: pc.localDescription.type,
@@ -260,11 +211,10 @@ export function useWebRTC() {
   }, [initPC]);
 
   /**
-   * Handle incoming ICE candidates with pending queue (Section 8)
+   * Handle incoming ICE candidates with pending queue
    */
   const addCandidate = useCallback(async (candidate) => {
     if (!candidate) return;
-    console.log('[ICE] Received candidate', candidate);
     const pc = pcRef.current;
     if (!pc || !hasRemoteDescriptionRef.current || !pc.remoteDescription) {
       pendingCandidatesRef.current.push(candidate);
@@ -294,18 +244,8 @@ export function useWebRTC() {
   }, []);
 
   /**
-   * Read file slice into ArrayBuffer
-   */
-  const readChunk = (file, start, end) =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file.slice(start, end));
-    });
-
-  /**
-   * Stream files across the RTCDataChannel with binary framing and backpressure flow control (Sections 18, 19, 20)
+   * Stream files across the RTCDataChannel with binary framing, lightweight chunk slicing,
+   * micro-yields to prevent UI/GC lockup, and backpressure flow control.
    */
   const sendFiles = useCallback(async (files, dc, callbacks = {}) => {
     const { onProgress, onSpeed, onFileStart, onComplete, isCancelled, resumeOffsets = {} } = callbacks;
@@ -328,6 +268,7 @@ export function useWebRTC() {
     lastBytes = sentBytes;
 
     // Control message: session-info
+    if (dc.readyState !== 'open') throw new DOMException('DataChannel closed before send', 'InvalidStateError');
     dc.send(
       JSON.stringify({
         type: 'session-info',
@@ -346,6 +287,7 @@ export function useWebRTC() {
       if (onFileStart) onFileStart(file.name, startChunkIndex > 0);
 
       // Control message: meta
+      if (dc.readyState !== 'open') throw new DOMException('DataChannel closed before meta send', 'InvalidStateError');
       dc.send(
         JSON.stringify({
           type: 'meta',
@@ -364,7 +306,9 @@ export function useWebRTC() {
 
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunkData = await readChunk(file, start, end);
+
+        // Direct slice arrayBuffer (fastest method in modern browsers, no FileReader overhead)
+        const chunkData = await file.slice(start, end).arrayBuffer();
 
         // Binary frame: 4 bytes fileIndex + 4 bytes chunkIndex + chunkData
         const packet = new Uint8Array(8 + chunkData.byteLength);
@@ -373,14 +317,26 @@ export function useWebRTC() {
         view.setUint32(4, i, false); // big-endian
         packet.set(new Uint8Array(chunkData), 8);
 
-        // Backpressure check (Section 19): pause if buffer exceeds 1MB
-        while (dc.bufferedAmount > 1024 * 1024) {
+        // Backpressure check: wait if buffer exceeds threshold
+        while (dc.bufferedAmount > 512 * 1024) {
           if (isCancelled && isCancelled()) return;
-          await new Promise((r) => setTimeout(r, 40));
+          if (dc.readyState !== 'open') return; // channel dropped — bail silently
+          await new Promise((r) => setTimeout(r, 20));
+        }
+
+        // Guard: DataChannel may have closed during backpressure wait or between chunks
+        if (dc.readyState !== 'open') {
+          console.warn('[DATA] DataChannel closed mid-transfer at chunk', i, '— aborting send loop');
+          return;
         }
 
         dc.send(packet.buffer);
         sentBytes += end - start;
+
+        // Yield to event loop every 32 chunks to let browser GC and UI breathe
+        if (i % 32 === 0) {
+          await new Promise((r) => setTimeout(r, 0));
+        }
 
         const now = Date.now();
         const elapsed = (now - lastTime) / 1000;
@@ -398,10 +354,12 @@ export function useWebRTC() {
       }
 
       // Control message: file-end
+      if (dc.readyState !== 'open') return;
       dc.send(JSON.stringify({ type: 'file-end', fileIndex: f, totalChunks }));
     }
 
     // Control message: session-end
+    if (dc.readyState !== 'open') return;
     dc.send(JSON.stringify({ type: 'session-end' }));
     if (onProgress) onProgress(100);
     if (onComplete) onComplete();
